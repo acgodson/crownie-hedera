@@ -10,7 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@1inch/fusion-sdk": "^2.3.6",
+    "@crownie-bridge/fusion-icp-bridge": "workspace:*",
+    "@crownie-bridge/shared-types": "workspace:*",
     "@tanstack/react-query": "^5.84.1",
     "@wagmi/core": "^2.18.1",
     "buffer": "^6.0.3",

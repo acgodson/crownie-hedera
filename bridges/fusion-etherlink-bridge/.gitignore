@@ -1,23 +1,11 @@
-
+# Dependencies
 node_modules/
-*/node_modules/
-**/node_modules/
 
-
+# Build outputs
 dist/
-*/dist/
-**/dist/
-dist-ssr/
-*/dist-ssr/
-**/dist-ssr/
 build/
-*/build/
-**/build/
-.next/
-*/next/
-**/next/
 
-
+# Logs
 logs
 *.log
 npm-debug.log*
@@ -26,79 +14,56 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-
+# Runtime data
 pids
 *.pid
 *.seed
 *.pid.lock
 
-
+# Coverage directory used by tools like istanbul
 coverage/
 *.lcov
 
-
+# nyc test coverage
 .nyc_output
 
-
-jspm_packages/
-
-
+# Optional npm cache directory
 .npm
 
-
+# Optional eslint cache
 .eslintcache
 
-
+# Optional stylelint cache
 .stylelintcache
 
-
+# Microbundle cache
 .rpt2_cache/
 .rts2_cache_cjs/
 .rts2_cache_es/
 .rts2_cache_umd/
 
-
+# Optional REPL history
 .node_repl_history
 
-
+# Output of 'npm pack'
 *.tgz
 
-
+# Yarn Integrity file
 .yarn-integrity
 
+# Lock files
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
 
+# dotenv environment variable files
 .env
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
 
-
-.cache
-.parcel-cache
-
-
-.next
-out
-
-
-.nuxt
-dist
-
-
-.cache/
-public
-
-
-.out
-.storybook-out
-storybook-static
-
-
-tmp/
-temp/
-
-
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -109,7 +74,7 @@ temp/
 *.sln
 *.sw?
 
-
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -118,22 +83,11 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-
-yarn.lock
-package-lock.json
-pnpm-lock.yaml
-
-
+# TypeScript
 *.tsbuildinfo
 
-
+# Vite
 .vite/
 
-
-.turbo/
-
-
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Turbo
+.turbo/ 
