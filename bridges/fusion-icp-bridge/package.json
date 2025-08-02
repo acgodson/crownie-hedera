@@ -20,7 +20,7 @@
     "@dfinity/candid": "^3.1.0",
     "@dfinity/identity": "^3.1.0",
     "@dfinity/principal": "^3.1.0",
-    "ethers": "^6.15.0"
+    "viem": "^2.33.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

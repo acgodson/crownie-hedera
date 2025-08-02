@@ -4,7 +4,9 @@ import {
   PrivateKeyProviderConnector,
   OrderStatus,
 } from "@1inch/fusion-sdk";
-import { ethers } from "ethers";
+import { createPublicClient, http, createWalletClient, custom } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { sepolia } from "viem/chains";
 import type {
   FusionQuoteParams,
   FusionOrderParams,
@@ -20,12 +22,22 @@ export class FusionService {
     this.apiKey = apiKey;
 
     // Initialize with proper provider connector
-    const provider = new ethers.JsonRpcProvider(
-      "https://eth-sepolia.g.alchemy.com/v2/" + process.env.ALCHEMY_KEY
-    );
+    const rpcUrl = process.env.ETHEREUM_RPC_URL || `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`;
+    const publicClient = createPublicClient({
+      chain: sepolia,
+      transport: http(rpcUrl)
+    });
+    
+    const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: sepolia,
+      transport: custom(publicClient)
+    });
+    
     const connector = new PrivateKeyProviderConnector(
       process.env.PRIVATE_KEY || "",
-      provider
+      walletClient as any
     );
 
     this.sdk = new FusionSDK({
@@ -44,21 +56,16 @@ export class FusionService {
         amount: params.amount,
         walletAddress: params.walletAddress,
         enableEstimate: true,
-        slippagePercentage: params.slippagePercentage || 1,
-        feePercent: params.feePercent || 0,
+        slippage: params.slippagePercentage || 1,
       });
 
       return {
-        sellAmount: quote.fromTokenAmount,
+        sellAmount: quote.fromTokenAmount.toString(),
         buyAmount: quote.toTokenAmount,
-        price: quote.prices?.spot || "0",
-        guaranteedPrice: quote.prices?.fast || "0",
-        estimatedGas: quote.gas?.toString() || "0",
-        sources:
-          quote.protocols?.map((protocol) => ({
-            name: protocol.name,
-            proportion: protocol.part.toString(),
-          })) || [],
+        price: quote.prices?.usd?.fromToken || "0",
+        guaranteedPrice: quote.prices?.usd?.toToken || "0",
+        estimatedGas: "0", 
+        sources: [], 
       };
     } catch (error) {
       console.error("Failed to get Fusion quote:", error);
@@ -73,9 +80,7 @@ export class FusionService {
         toTokenAddress: params.takerAsset,
         amount: params.amount,
         walletAddress: params.maker,
-        slippagePercentage: 1,
-        enableEstimate: true,
-        feePercent: 0,
+        slippage: 1,
       });
 
       return order;
@@ -146,9 +151,9 @@ export class FusionService {
       },
       sellAmount: amount,
       buyAmount: quote.buyAmount,
-      sourceChain: 1 as any, // Ethereum
+      sourceChain: 1 as any,
       destinationChain: destinationChain as any,
-      deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      deadline: Math.floor(Date.now() / 1000) + 3600,
       hashlock,
       secret,
       status: "pending" as any,
@@ -183,7 +188,6 @@ export class FusionService {
   }
 }
 
-// Singleton instance
 let fusionService: FusionService | null = null;
 
 export const getFusionService = (apiKey?: string): FusionService => {
