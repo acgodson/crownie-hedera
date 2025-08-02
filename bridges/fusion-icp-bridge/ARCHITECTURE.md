@@ -6,27 +6,31 @@ This architecture enables atomic swaps between Ethereum and Internet Computer Pr
 ## Component Architecture
 
 ### 1. ICP Resolver Canister (Core Component)
-**Purpose**: Acts as the "resolver" in 1inch terminology - monitors orders and facilitates swaps
+**Purpose**: Acts as professional "resolver" in 1inch Fusion+ cross-chain ecosystem
 
-**Capabilities**:
-- Monitors 1inch orders via EVM RPC canister
-- Competes in Dutch auctions
-- Creates HTLC escrows on both chains
-- Manages cross-chain secret sharing
+**Enhanced Capabilities**:
+- **EVM Identity Derivation**: Converts Ethereum addresses to ICP Principals
+- **1inch Fusion+ Integration**: Monitors real cross-chain orders via EVM RPC
+- **Dutch Auction Competition**: Competes with other resolvers for profitable swaps
+- **Atomic Escrow Management**: Creates HTLCs on both Ethereum and ICP
+- **Automated Secret Sharing**: Handles cryptographic secret revelation
 
-**Key Functions**:
+**Updated Key Functions**:
 ```rust
-// Monitor 1inch orders on Ethereum
-pub async fn monitor_fusion_orders() -> Vec<FusionOrder>
+// Derive ICP Principal from Ethereum address (SIWE-S)
+pub fn derive_icp_principal(eth_address: String) -> Principal
 
-// Compete in Dutch auction
-pub async fn bid_on_order(order_hash: String, bid_price: Nat) -> Result<(), String>
+// Monitor real 1inch Fusion+ cross-chain orders
+pub async fn monitor_fusion_plus_orders() -> Vec<CrossChainOrder>
 
-// Create escrows on both chains
-pub async fn create_cross_chain_escrows(order: FusionOrder) -> Result<EscrowPair, String>
+// Compete in Dutch auction with profitability analysis
+pub async fn evaluate_and_bid_orders() -> Vec<BidResult>
 
-// Handle secret revelation
-pub async fn reveal_secret(secret: String, order_hash: String) -> Result<(), String>
+// Create atomic escrows on both chains
+pub async fn create_atomic_escrows(order: CrossChainOrder) -> Result<EscrowPair, String>
+
+// Handle automatic secret revelation and settlement
+pub async fn complete_atomic_swap(order_hash: String, secret: [u8; 32]) -> Result<(), String>
 ```
 
 ### 2. ICP HTLC Canister (Escrow Management)
@@ -77,15 +81,19 @@ pub async fn get_ethereum_logs(contract: String, from_block: u64) -> Vec<Log>
 pub async fn get_fusion_order(order_hash: String) -> Option<FusionOrder>
 ```
 
-## Data Flow
+## Updated Data Flow (2025)
 
-### Ethereum → ICP Swap
-1. **User creates 1inch order** on Ethereum (using our existing code)
-2. **ICP Resolver monitors** Ethereum for new orders
-3. **Resolver bids** in Dutch auction via EVM RPC
-4. **If winning**: Resolver creates escrows on both chains
-5. **User verifies** ICP escrow and reveals secret
-6. **Atomic unlock** happens on both chains
+### **Ethereum → ICP Swap (Matches 1inch Fusion+ Standard)**
+1. **User connects Ethereum wallet** (0x123...abc) - no ICP address needed
+2. **System derives ICP Principal** deterministically from Ethereum address
+3. **User signs 1inch Fusion+ order** specifying ETH → ICP swap
+4. **ICP Resolver monitors** Ethereum for new cross-chain orders
+5. **Resolver competes** in Dutch auction via EVM RPC
+6. **If winning**: Resolver creates atomic escrows:
+   - **Ethereum HTLC**: Locks user's ETH with secret hash
+   - **ICP HTLC**: Locks resolver's ICP with same secret hash
+7. **Automatic completion**: Secret revealed → both escrows unlock atomically
+8. **User receives ICP** tokens at derived Principal (accessible via Ethereum wallet)
 
 ### ICP → Ethereum Swap  
 1. **User creates order** via ICP Resolver canister

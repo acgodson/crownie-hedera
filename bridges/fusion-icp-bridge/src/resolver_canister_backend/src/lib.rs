@@ -1,5 +1,4 @@
 use candid::Principal;
-use ic_cdk::api::call::call_with_payment;
 use ic_cdk::api::management_canister::http_request::{HttpResponse, TransformArgs};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -12,7 +11,7 @@ use types::*;
 use utils::ResolverUtils;
 use external::{HttpClient, EvmRpcClient};
 
-// Thread-local storage for canister state
+
 thread_local! {
     static STATE: RefCell<ResolverState> = RefCell::new(ResolverState::default());
 }
@@ -25,7 +24,7 @@ struct ResolverState {
     resolver_config: ResolverConfig,
 }
 
-// Core resolver functions
+
 #[ic_cdk::update]
 pub async fn derive_icp_principal(eth_address: String) -> ResolverResult<Principal> {
     ResolverUtils::derive_icp_principal(&eth_address)
@@ -33,7 +32,6 @@ pub async fn derive_icp_principal(eth_address: String) -> ResolverResult<Princip
 
 #[ic_cdk::query]
 pub fn get_active_orders_status() -> Vec<CrossChainOrder> {
-    // Returns orders currently being processed by this resolver
     STATE.with(|state| {
         let orders = state.borrow().active_orders.values().cloned().collect();
         orders
@@ -44,7 +42,7 @@ pub fn get_active_orders_status() -> Vec<CrossChainOrder> {
 pub async fn evaluate_and_bid_orders() -> ResolverResult<Vec<BidResult>> {
     let mut results = Vec::new();
     
-    // Get configuration
+  
     let (api_key, evm_canister, alchemy_key, custom_url) = STATE.with(|state| {
         let config = &state.borrow().resolver_config;
         (
@@ -67,10 +65,10 @@ pub async fn evaluate_and_bid_orders() -> ResolverResult<Vec<BidResult>> {
         
         if profitability.estimated_profit > get_min_profit_threshold() {
             // Create EVM client with appropriate provider
-            let evm_client = if let Some(alchemy_key) = alchemy_key {
-                EvmRpcClient::new_with_alchemy(evm_canister, alchemy_key)
-            } else if let Some(custom_url) = custom_url {
-                EvmRpcClient::new_with_custom_provider(evm_canister, custom_url)
+            let evm_client = if let Some(ref alchemy_key) = alchemy_key {
+                EvmRpcClient::new_with_alchemy(evm_canister, alchemy_key.clone())
+            } else if let Some(ref custom_url) = custom_url {
+                EvmRpcClient::new_with_custom_provider(evm_canister, custom_url.clone())
             } else {
                 EvmRpcClient::new(evm_canister) // Default: consensus providers
             };
@@ -91,15 +89,14 @@ pub async fn evaluate_and_bid_orders() -> ResolverResult<Vec<BidResult>> {
 
 #[ic_cdk::update]
 pub async fn create_atomic_escrows(order: CrossChainOrder) -> ResolverResult<EscrowPair> {
-    // Validate order
+
     ResolverUtils::validate_order_hash(&order.order_hash)?;
     ResolverUtils::validate_token_address(&order.maker_asset)?;
     ResolverUtils::validate_token_address(&order.taker_asset)?;
     
-    // Derive ICP recipient from Ethereum maker address
+
     let icp_recipient = ResolverUtils::derive_icp_principal(&order.maker)?;
     
-    // Create HTLC on ICP side
     let icp_escrow_id = create_icp_htlc(
         order.taking_amount,
         icp_recipient,
@@ -107,7 +104,6 @@ pub async fn create_atomic_escrows(order: CrossChainOrder) -> ResolverResult<Esc
         order.time_lock,
     )?;
     
-    // Create HTLC on Ethereum side via EVM RPC
     let evm_canister = STATE.with(|state| state.borrow().resolver_config.evm_rpc_canister);
     let evm_client = EvmRpcClient::new(evm_canister);
     let eth_escrow_address = evm_client.create_ethereum_htlc(&order).await?;
@@ -117,7 +113,6 @@ pub async fn create_atomic_escrows(order: CrossChainOrder) -> ResolverResult<Esc
         icp_escrow: icp_escrow_id,
     };
     
-    // Store order and escrow info
     STATE.with(|state| {
         state.borrow_mut().active_orders.insert(order.order_hash.clone(), order);
     });
@@ -127,7 +122,7 @@ pub async fn create_atomic_escrows(order: CrossChainOrder) -> ResolverResult<Esc
 
 #[ic_cdk::update]
 pub async fn complete_atomic_swap(order_hash: String, secret: [u8; 32]) -> ResolverResult<()> {
-    // Verify secret matches hash_lock
+
     let hash_array = ResolverUtils::generate_secret_hash(&secret);
     
     STATE.with(|state| {
@@ -137,8 +132,6 @@ pub async fn complete_atomic_swap(order_hash: String, secret: [u8; 32]) -> Resol
             if hash_array != order.hash_lock {
                 return Err(ResolverError::InvalidInput("Invalid secret for order".to_string()));
             }
-            
-            // Mark swap as completed
             state_mut.completed_swaps.insert(order_hash.clone(), ic_cdk::api::time());
             state_mut.active_orders.remove(&order_hash);
             
@@ -175,7 +168,6 @@ pub async fn verify_ethereum_settlement(tx_hash: String) -> ResolverResult<bool>
 
 #[ic_cdk::update]
 pub async fn update_resolver_config(config: ResolverConfig) -> ResolverResult<()> {
-    // Validate config
     for token in &config.supported_tokens {
         ResolverUtils::validate_token_address(token)?;
     }
@@ -206,7 +198,6 @@ pub fn get_completed_swaps() -> Vec<(String, u64)> {
     })
 }
 
-// Helper functions
 fn convert_oneinch_order(oneinch_order: OneInchOrder) -> ResolverResult<CrossChainOrder> {
     let secret = ResolverUtils::generate_htlc_secret();
     let hash_lock = ResolverUtils::generate_secret_hash(&secret);

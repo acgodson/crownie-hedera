@@ -25,6 +25,78 @@ pub struct AuctionDetails {
     pub gas_price: u64,          // Gas cost parameters
 }
 
+// Enhanced Fusion+ specific types
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct FusionOrderParams {
+    pub maker_asset: String,
+    pub taker_asset: String,
+    pub amount: String,
+    pub taker: String,
+    pub maker: String,
+    pub allowed_sender: Option<String>,
+    pub making_amount: String,
+    pub taking_amount: String,
+    pub predicate: Option<String>,
+    pub permit: Option<String>,
+    pub interactions: Option<String>,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct FusionQuoteParams {
+    pub from_token_address: String,
+    pub to_token_address: String,
+    pub amount: String,
+    pub wallet_address: String,
+    pub slippage_percentage: Option<f64>,
+    pub fee_percent: Option<f64>,
+    pub is_permit2: Option<bool>,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct OrderStatus {
+    pub status: String,           // "active", "filled", "cancelled", "expired"
+    pub filled_at: Option<u64>,
+    pub cancelled_at: Option<u64>,
+    pub expires_at: u64,
+    pub remaining_making_amount: String,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct SettlementData {
+    pub tx_hash: String,
+    pub block_number: u64,
+    pub gas_used: u64,
+    pub gas_price: String,
+    pub effective_gas_price: String,
+    pub status: bool,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct ChainConfig {
+    pub chain_id: u64,
+    pub rpc_url: String,
+    pub explorer_url: String,
+    pub native_currency: String,
+    pub block_time: u64,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct BridgeConfig {
+    pub source_chain: ChainConfig,
+    pub destination_chain: ChainConfig,
+    pub bridge_contract: String,
+    pub min_confirmation_blocks: u64,
+    pub max_gas_limit: u64,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct GasEstimate {
+    pub gas_limit: u64,
+    pub gas_price: String,
+    pub total_cost: String,
+    pub is_estimate: bool,
+}
+
 #[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
 pub struct HTLCEscrow {
     pub contract_id: String,
@@ -68,6 +140,7 @@ pub struct ResolverConfig {
     pub oneinch_api_key: Option<String>,
     pub alchemy_api_key: Option<String>,
     pub custom_rpc_url: Option<String>,
+    pub bridge_config: Option<BridgeConfig>,
 }
 
 impl Default for ResolverConfig {
@@ -83,6 +156,7 @@ impl Default for ResolverConfig {
             oneinch_api_key: None,
             alchemy_api_key: None,
             custom_rpc_url: None,
+            bridge_config: None,
         }
     }
 }
@@ -96,6 +170,9 @@ pub enum ResolverError {
     InsufficientCycles(String),
     NetworkError(String),
     ContractError(String),
+    OrderNotFound(String),
+    InsufficientLiquidity(String),
+    SlippageExceeded(String),
 }
 
 pub type ResolverResult<T> = Result<T, ResolverError>;
@@ -117,6 +194,8 @@ pub struct OneInchOrder {
     pub auction_duration: u64,
     pub initial_rate_bump: u32,
     pub points: Vec<AuctionPoint>,
+    pub status: Option<OrderStatus>,
+    pub settlement: Option<SettlementData>,
 }
 
 #[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
@@ -130,6 +209,15 @@ pub struct OneInchQuoteResponse {
     pub dst_amount: String,
     pub estimated_gas: u64,
     pub gas_price: String,
+    pub guaranteed_price: Option<String>,
+    pub sources: Option<Vec<QuoteSource>>,
+    pub price_impact: Option<f64>,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
+pub struct QuoteSource {
+    pub name: String,
+    pub proportion: String,
 }
 
 // Profitability analysis types
