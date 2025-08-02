@@ -1,2 +1,1 @@
-export * from './fusionService';
-export * from './icpService';
+export * from './bridge';
