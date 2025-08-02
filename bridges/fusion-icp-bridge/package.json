@@ -1,0 +1,12 @@
+{
+  "name": "fusion-icp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1inch Fusion+ to ICP Chain Fusion Bridge",
+  "scripts": {
+    "dev": "pnpm --filter fusion-icp-interface dev",
+    "build": "pnpm -r build",
+    "deploy:canister": "dfx deploy",
+    "deploy:contracts": "hardhat deploy --network sepolia"
+  }
+}
