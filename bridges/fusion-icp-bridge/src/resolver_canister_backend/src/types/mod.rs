@@ -322,6 +322,7 @@ pub struct OrchestratorConfig {
     pub supported_tokens: Vec<String>,      // ETH, USDC, etc.
     pub default_timelock: u64,              // Default timelock duration
     pub ecdsa_key_name: String,            // Key for threshold ECDSA
+    pub oneinch_resolver_address: String,   // 1inch Resolver contract address
 }
 
 #[derive(CandidType, Serialize, Deserialize, Clone, Debug)]
@@ -346,6 +347,7 @@ impl Default for OrchestratorConfig {
             ],
             default_timelock: 3600, // 1 hour  
             ecdsa_key_name: "dfx_test_key".to_string(), // Test key
+            oneinch_resolver_address: "0x0000000000000000000000000000000000000000".to_string(), // Default 1inch resolver
         }
     }
 }

@@ -1,0 +1,134 @@
+type AuctionDetails = record {
+  duration : nat64;
+  start_time : nat64;
+  initial_rate_bump : nat32;
+  gas_price : nat64;
+};
+type AuctionPoint = record { coefficient : nat32; delay : nat64 };
+type BidResult = record {
+  bid_accepted : bool;
+  order_hash : text;
+  profitability_score : float64;
+  estimated_profit : nat;
+};
+type BridgeConfig = record {
+  source_chain : ChainConfig;
+  max_gas_limit : nat64;
+  destination_chain : ChainConfig;
+  bridge_contract : text;
+  min_confirmation_blocks : nat64;
+};
+type ChainConfig = record {
+  explorer_url : text;
+  block_time : nat64;
+  native_currency : text;
+  chain_id : nat64;
+  rpc_url : text;
+};
+type CrossChainOrder = record {
+  maker : text;
+  src_chain_id : nat64;
+  time_lock : nat64;
+  maker_asset : text;
+  taking_amount : nat;
+  making_amount : nat;
+  dst_chain_id : nat64;
+  hash_lock : blob;
+  order_hash : text;
+  taker_asset : text;
+  auction_details : AuctionDetails;
+};
+type EscrowPair = record { ethereum_escrow : text; icp_escrow : text };
+type HttpHeader = record { value : text; name : text };
+type HttpResponse = record {
+  status : nat;
+  body : blob;
+  headers : vec HttpHeader;
+};
+type OneInchOrder = record {
+  maker : text;
+  auction_start_date : nat64;
+  status : opt OrderStatus;
+  maker_asset : text;
+  taking_amount : text;
+  creation_timestamp : nat64;
+  making_amount : text;
+  hash : text;
+  auction_duration : nat64;
+  salt : text;
+  maker_traits : text;
+  taker_asset : text;
+  initial_rate_bump : nat32;
+  receiver : text;
+  points : vec AuctionPoint;
+  settlement : opt SettlementData;
+};
+type OneInchQuoteResponse = record {
+  dst_amount : text;
+  guaranteed_price : opt text;
+  price_impact : opt float64;
+  sources : opt vec QuoteSource;
+  estimated_gas : nat64;
+  gas_price : text;
+};
+type OrderStatus = record {
+  status : text;
+  cancelled_at : opt nat64;
+  filled_at : opt nat64;
+  remaining_making_amount : text;
+  expires_at : nat64;
+};
+type QuoteSource = record { name : text; proportion : text };
+type ResolverConfig = record {
+  custom_rpc_url : opt text;
+  alchemy_api_key : opt text;
+  max_gas_price : nat64;
+  bridge_config : opt BridgeConfig;
+  oneinch_api_key : opt text;
+  min_profit_threshold : nat;
+  supported_tokens : vec text;
+  evm_rpc_canister : principal;
+};
+type ResolverError = variant {
+  InvalidInput : text;
+  NetworkError : text;
+  ContractError : text;
+  OrderNotFound : text;
+  ProcessingError : text;
+  InsufficientCycles : text;
+  InsufficientLiquidity : text;
+  ExternalCallError : text;
+  SlippageExceeded : text;
+};
+type Result = variant { Ok; Err : ResolverError };
+type Result_1 = variant { Ok : EscrowPair; Err : ResolverError };
+type Result_2 = variant { Ok : principal; Err : ResolverError };
+type Result_3 = variant { Ok : vec BidResult; Err : ResolverError };
+type Result_4 = variant { Ok : vec OneInchOrder; Err : ResolverError };
+type Result_5 = variant { Ok : OneInchQuoteResponse; Err : ResolverError };
+type Result_6 = variant { Ok : bool; Err : ResolverError };
+type SettlementData = record {
+  effective_gas_price : text;
+  status : bool;
+  block_number : nat64;
+  gas_used : nat64;
+  tx_hash : text;
+  gas_price : text;
+};
+type TransformArgs = record { context : blob; response : HttpResponse };
+service : {
+  complete_atomic_swap : (text, blob) -> (Result);
+  create_atomic_escrows : (CrossChainOrder) -> (Result_1);
+  derive_icp_principal : (text) -> (Result_2);
+  evaluate_and_bid_orders : () -> (Result_3);
+  fetch_orders_from_oneinch : (nat64) -> (Result_4);
+  get_active_orders : () -> (vec CrossChainOrder) query;
+  get_active_orders_status : () -> (vec CrossChainOrder) query;
+  get_completed_swaps : () -> (vec record { text; nat64 }) query;
+  get_price_quote : (text, text, text, nat64) -> (Result_5);
+  get_resolver_config : () -> (ResolverConfig) query;
+  // Transform function for 1inch API responses
+  transform_oneinch_response : (TransformArgs) -> (HttpResponse) query;
+  update_resolver_config : (ResolverConfig) -> (Result);
+  verify_ethereum_settlement : (text) -> (Result_6);
+}

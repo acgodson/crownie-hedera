@@ -199,7 +199,7 @@ impl HttpClient {
         Ok(false) // Return false for now as this needs on-chain implementation
     }
 
-    /// Calculate cycles needed for API call based on request/response size
+    
     fn calculate_api_cycles(request_size: usize, response_size: usize) -> u128 {
         let n = 13u128; // Number of consensus nodes
         let base_fee = (3_000_000 + 60_000 * n) * n;
@@ -209,14 +209,11 @@ impl HttpClient {
 
         let total_calculated = base_fee + request_fee + response_fee;
         
-        // Add buffer for network variability (3x multiplier)
         let with_buffer = (total_calculated as f64 * 3.0) as u128;
-        
-        // Minimum cycles to ensure request succeeds
+
         with_buffer.max(5_000_000_000)
     }
 
-    /// Handle HTTP request errors with proper error classification
     fn handle_http_error<T>(
         rejection_code: ic_cdk::api::call::RejectionCode,
         message: String,
@@ -241,12 +238,12 @@ impl HttpClient {
     }
 }
 
-/// Transform function for 1inch API responses
+
 #[query]
 fn transform_oneinch_response(args: TransformArgs) -> HttpResponse {
     let mut response = args.response;
 
-    // Keep only essential headers
+   
     response.headers.retain(|header| {
         let name_lower = header.name.to_lowercase();
         matches!(name_lower.as_str(), 
@@ -256,7 +253,6 @@ fn transform_oneinch_response(args: TransformArgs) -> HttpResponse {
         )
     });
 
-    // Clean error responses
     if response.status != 200u16 {
         if let Ok(error_text) = String::from_utf8(response.body.clone()) {
             if error_text.contains("error") {

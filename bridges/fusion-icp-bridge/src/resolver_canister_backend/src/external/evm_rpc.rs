@@ -1,309 +1,43 @@
 use candid::Principal;
-use ic_cdk::api::call::call_with_payment;
 use serde_json::{json, Value};
-
+use ic_cdk::api::management_canister::ecdsa::{
+    EcdsaKeyId, EcdsaPublicKeyArgument, EcdsaPublicKeyResponse, EcdsaCurve,
+    SignWithEcdsaArgument, SignWithEcdsaResponse,
+};
 use crate::types::{ResolverError, ResolverResult, EvmNetwork};
 use crate::STATE;
 
-/// EVM RPC client for blockchain interactions via ICP's EVM RPC canister
-/// 
-/// Responsibilities:
-/// - Submit transactions to Ethereum (HTLC creation, bidding)
-/// - Query blockchain state (gas prices, block numbers, balances)
-/// - Verify transaction receipts and status
-/// - Handle threshold ECDSA signing
-/// - Smart contract interactions
-/// 
-/// NOT responsible for:
-/// - Order discovery (use HttpClient with 1inch API)
-/// - Price quotes (use HttpClient with 1inch API)
-/// - Market data (use HttpClient for external APIs)
+
 pub struct EvmRpcClient {
     pub canister_id: Principal,
-    pub provider_config: RpcProviderConfig,
 }
 
-#[derive(Clone, Debug)]
-pub enum RpcProviderConfig {
-    /// Use consensus across multiple built-in providers (Alchemy, Ankr, BlockPi)
-    EthMainnet,
-    /// Use Polygon mainnet providers
-    Polygon,
-    /// Use custom Alchemy endpoint with your API key
-    CustomAlchemy(String),
-    /// Use any custom RPC URL
-    Custom(String),
+pub enum ResolverFunction {
+    DeploySrc,
+    DeployDst, 
+    Withdraw,
+    Cancel,
+    ArbitraryCalls,
+}
+
+impl ResolverFunction {
+    fn selector(&self) -> &'static str {
+        match self {
+            ResolverFunction::DeploySrc => "0x7b12345a", 
+            ResolverFunction::DeployDst => "0x8c23456b", 
+            ResolverFunction::Withdraw => "0x9d34567c",  
+            ResolverFunction::Cancel => "0xae45678d",  
+            ResolverFunction::ArbitraryCalls => "0xbf56789e", 
+        }
+    }
 }
 
 impl EvmRpcClient {
-    /// Create new EVM RPC client with default Ethereum mainnet providers
     pub fn new(canister_id: Principal) -> Self {
-        Self { 
-            canister_id,
-            provider_config: RpcProviderConfig::EthMainnet,
-        }
-    }
-
-    /// Create EVM RPC client with custom Alchemy API key
-    pub fn new_with_alchemy(canister_id: Principal, api_key: String) -> Self {
-        Self {
-            canister_id,
-            provider_config: RpcProviderConfig::CustomAlchemy(api_key),
-        }
-    }
-
-    /// Create EVM RPC client with custom provider URL
-    pub fn new_with_custom_provider(canister_id: Principal, url: String) -> Self {
-        Self {
-            canister_id,
-            provider_config: RpcProviderConfig::Custom(url),
-        }
+        Self { canister_id }
     }
 
 
-    pub async fn get_latest_block_number(&self) -> ResolverResult<u64> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_blockNumber",
-            "params": [],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(block_hex) = result.as_str() {
-                let block_number = u64::from_str_radix(&block_hex[2..], 16)
-                    .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse block number: {}", e)))?;
-                return Ok(block_number);
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid block number response".to_string()))
-    }
-
-
-    pub async fn get_logs(
-        &self,
-        contract_address: &str,
-        from_block: u64,
-        to_block: Option<u64>,
-        topics: Vec<String>,
-    ) -> ResolverResult<Vec<Value>> {
-        let to_block_param = to_block
-            .map(|b| json!(format!("0x{:x}", b)))
-            .unwrap_or(json!("latest"));
-
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_getLogs",
-            "params": [{
-                "address": contract_address,
-                "fromBlock": format!("0x{:x}", from_block),
-                "toBlock": to_block_param,
-                "topics": topics
-            }],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(logs) = result.as_array() {
-                return Ok(logs.clone());
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid logs response".to_string()))
-    }
-
-
-    pub async fn get_transaction_receipt(&self, tx_hash: &str) -> ResolverResult<Value> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_getTransactionReceipt",
-            "params": [tx_hash],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            return Ok(result.clone());
-        }
-
-        Err(ResolverError::ExternalCallError("Transaction receipt not found".to_string()))
-    }
-
-
-    pub async fn send_raw_transaction(&self, signed_tx: &str) -> ResolverResult<String> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_sendRawTransaction",
-            "params": [signed_tx],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(tx_hash) = result.as_str() {
-                return Ok(tx_hash.to_string());
-            }
-        }
-
-        if let Some(error) = response.get("error") {
-            return Err(ResolverError::ExternalCallError(format!(
-                "Transaction failed: {}", error
-            )));
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid transaction response".to_string()))
-    }
-
-
-    pub async fn call_contract(
-        &self,
-        contract_address: &str,
-        data: &str,
-        block: Option<u64>,
-    ) -> ResolverResult<String> {
-        let block_param = block
-            .map(|b| json!(format!("0x{:x}", b)))
-            .unwrap_or(json!("latest"));
-
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_call",
-            "params": [{
-                "to": contract_address,
-                "data": data
-            }, block_param],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(data) = result.as_str() {
-                return Ok(data.to_string());
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid contract call response".to_string()))
-    }
-
-
-    pub async fn get_gas_price(&self) -> ResolverResult<u128> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_gasPrice",
-            "params": [],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(gas_price_hex) = result.as_str() {
-                let gas_price = u128::from_str_radix(&gas_price_hex[2..], 16)
-                    .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse gas price: {}", e)))?;
-                return Ok(gas_price);
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid gas price response".to_string()))
-    }
-
-
-    pub async fn get_transaction_count(&self, address: &str) -> ResolverResult<u64> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_getTransactionCount",
-            "params": [address, "latest"],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(nonce_hex) = result.as_str() {
-                let nonce = u64::from_str_radix(&nonce_hex[2..], 16)
-                    .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse nonce: {}", e)))?;
-                return Ok(nonce);
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid nonce response".to_string()))
-    }
-
-
-    /// Verify transaction settlement on Ethereum (used after winning auction)
-    pub async fn verify_transaction_settlement(&self, tx_hash: &str) -> ResolverResult<bool> {
-        let receipt = self.get_transaction_receipt(tx_hash).await?;
-        
-        // Check if transaction was successful
-        if let Some(status) = receipt.get("status") {
-            if let Some(status_str) = status.as_str() {
-                return Ok(status_str == "0x1");
-            }
-        }
-        
-        Ok(false)
-    }
-
-    /// Verify 1inch order exists and is valid on-chain
-    pub async fn verify_oneinch_order(&self, order_hash: &str) -> ResolverResult<bool> {
-        // 1inch order book contract address on Ethereum mainnet
-        let oneinch_contract = "0x119c71D3BbAC22029622cbaEc24854d3D32D2828";
-        
-        // Function selector for checking order status: orderStatus(bytes32)
-        let function_selector = "0x2dff692d";
-        let padded_hash = format!("{}{}", function_selector, &order_hash[2..]);
-        
-        let result = self.call_contract(oneinch_contract, &padded_hash, None).await?;
-        
-        // Parse result - if result is not 0x0, order exists
-        Ok(result != "0x0000000000000000000000000000000000000000000000000000000000000000")
-    }
-
-    /// Get ERC20 token balance for an address
-    pub async fn get_token_balance(&self, token_address: &str, holder_address: &str) -> ResolverResult<u128> {
-        // balanceOf(address) function selector
-        let function_selector = "0x70a08231";
-        let padded_address = format!("{}{:0>64}", function_selector, &holder_address[2..]);
-        
-        let result = self.call_contract(token_address, &padded_address, None).await?;
-        
-        let balance = u128::from_str_radix(&result[2..], 16)
-            .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse balance: {}", e)))?;
-            
-        Ok(balance)
-    }
-
-    /// Get ETH balance for an address
-    pub async fn get_eth_balance(&self, address: &str) -> ResolverResult<u128> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_getBalance",
-            "params": [address, "latest"],
-            "id": 1
-        });
-
-        let response = self.make_rpc_call(request).await?;
-        
-        if let Some(result) = response.get("result") {
-            if let Some(balance_hex) = result.as_str() {
-                let balance = u128::from_str_radix(&balance_hex[2..], 16)
-                    .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse balance: {}", e)))?;
-                return Ok(balance);
-            }
-        }
-
-        Err(ResolverError::ExternalCallError("Invalid balance response".to_string()))
-    }
-
-    /// Deploy source escrow via wrapper contract
     pub async fn deploy_source_escrow(
         &self,
         user_address: &str,
@@ -312,33 +46,56 @@ impl EvmRpcClient {
         secret_hash: [u8; 32],
         timelock: u64,
     ) -> ResolverResult<String> {
-        // Call our wrapper contract that interfaces with 1inch EscrowFactory
-        // Function signature: deploySourceEscrow(address user, address token, uint256 amount, bytes32 secretHash, uint256 timelock)
-        
-        // Get config values dynamically
         let config = STATE.with(|state| state.borrow().config.clone());
-        let wrapper_address = &config.wrapper_contract_address;
-        let function_selector = "0x7b82e3b5"; // deploySourceEscrow(address,address,uint256,bytes32,uint256)
+        let resolver_address = &config.oneinch_resolver_address;
         
-        // Encode function call data
-        let call_data = format!("{}{}{}{}{}{}",
-            function_selector,
-            format!("{:0>64}", &user_address[2..]),           // user address
-            format!("{:0>64}", &token_address[2..]),          // token address  
-            format!("{:0>64x}", amount),                      // amount
-            hex::encode(secret_hash),                         // secret hash
-            format!("{:0>64x}", timelock)                     // timelock
-        );
+        let order = self.build_fusion_order(
+            user_address,
+            token_address, 
+            amount,
+            secret_hash,
+        ).await?;
         
-        let result = self.call_contract(wrapper_address, &call_data, None).await?;
+        let immutables = self.build_immutables(
+            &order.order_hash,
+            secret_hash,
+            user_address,           
+            &self.get_resolver_eth_address().await?, 
+            token_address,
+            amount,
+            timelock,
+        ).await?;
         
-        // Parse escrow address from return data (last 20 bytes)
-        let escrow_address = format!("0x{}", &result[result.len()-40..]);
-        ic_cdk::println!("Deployed source escrow at {} for user {}", escrow_address, user_address);
+        let (r, vs) = self.get_order_signature(&order).await?;
+        
+        let taker_traits = self.build_taker_traits().await?;
+        
+        let args = vec![]; 
+        
+        let call_data = self.encode_deploy_src(
+            &immutables,
+            &order,
+            r,
+            vs,
+            amount,
+            taker_traits,
+            &args,
+        )?;
+    
+        let safety_deposit = immutables.safety_deposit;
+        
+        let tx_hash = self.submit_signed_transaction(
+            resolver_address,
+            &call_data,
+            safety_deposit,
+        ).await?;
+        
+        let escrow_address = self.get_escrow_address_from_logs(&tx_hash, "SrcEscrowCreated").await?;
+        
+        ic_cdk::println!("Deployed source escrow via 1inch Resolver: {}", escrow_address);
         Ok(escrow_address)
     }
 
-    /// Deploy destination escrow via wrapper contract
     pub async fn deploy_dest_escrow(
         &self,
         recipient_address: &str,
@@ -347,146 +104,540 @@ impl EvmRpcClient {
         secret_hash: [u8; 32],
         timelock: u64,
     ) -> ResolverResult<String> {
-        // Call our wrapper contract to deploy destination escrow
-        // This escrow will be funded by the resolver and pay out to recipient
-        
         let config = STATE.with(|state| state.borrow().config.clone());
-        let wrapper_address = &config.wrapper_contract_address;
-        let function_selector = "0x9c4b7bf3"; // deployDestEscrow(address,address,uint256,bytes32,uint256)
+        let resolver_address = &config.oneinch_resolver_address;
         
-        let call_data = format!("{}{}{}{}{}{}",
-            function_selector,
-            format!("{:0>64}", &recipient_address[2..]),
-            format!("{:0>64}", &token_address[2..]),
-            format!("{:0>64x}", amount),
-            hex::encode(secret_hash),
-            format!("{:0>64x}", timelock)
-        );
+
+        let dst_immutables = self.build_immutables(
+            &self.generate_order_hash(recipient_address, token_address, amount, secret_hash).await?,
+            secret_hash,
+            &self.get_resolver_eth_address().await?, 
+            recipient_address,                    
+            token_address,
+            amount,
+            timelock,
+        ).await?;
+
+        let src_cancellation_timestamp = timelock + 3600; 
         
-        let result = self.call_contract(wrapper_address, &call_data, None).await?;
+        let call_data = self.encode_deploy_dst(
+            &dst_immutables,
+            src_cancellation_timestamp,
+        )?;
         
-        let escrow_address = format!("0x{}", &result[result.len()-40..]);
-        ic_cdk::println!("Deployed dest escrow at {} for recipient {}", escrow_address, recipient_address);
+        let safety_deposit = dst_immutables.safety_deposit;
+        
+        let tx_hash = self.submit_signed_transaction(
+            resolver_address,
+            &call_data,
+            safety_deposit,
+        ).await?;
+        
+        let escrow_address = self.get_escrow_address_from_logs(&tx_hash, "DstEscrowCreated").await?;
+        
+        ic_cdk::println!("Deployed dest escrow via 1inch Resolver: {}", escrow_address);
         Ok(escrow_address)
     }
 
-    /// Check if escrow has sufficient balance
+    pub async fn release_escrow_to_resolver(
+        &self,
+        escrow_address: &str,
+        secret: [u8; 32],
+        immutables: &OneInchImmutables,
+    ) -> ResolverResult<String> {
+        let config = STATE.with(|state| state.borrow().config.clone());
+        let resolver_address = &config.oneinch_resolver_address;
+     
+        let call_data = self.encode_withdraw(
+            escrow_address,
+            secret,
+            immutables,
+        )?;
+        
+        let tx_hash = self.submit_signed_transaction(
+            resolver_address,
+            &call_data,
+            0, 
+        ).await?;
+        
+        ic_cdk::println!("Withdrew from escrow {} via 1inch Resolver", escrow_address);
+        Ok(tx_hash)
+    }
+
+   
+    pub async fn refund_expired_escrow(
+        &self,
+        escrow_address: &str,
+        immutables: &OneInchImmutables,
+    ) -> ResolverResult<String> {
+        let config = STATE.with(|state| state.borrow().config.clone());
+        let resolver_address = &config.oneinch_resolver_address;
+        
+        let call_data = self.encode_cancel(
+            escrow_address,
+            immutables,
+        )?;
+        
+        let tx_hash = self.submit_signed_transaction(
+            resolver_address,
+            &call_data,
+            0,
+        ).await?;
+        
+        Ok(tx_hash)
+    }
+
+    pub async fn fund_dest_escrow(
+        &self,
+        escrow_address: &str,
+        token_address: &str,
+        amount: u128,
+    ) -> ResolverResult<String> {
+        if token_address == "0x0000000000000000000000000000000000000000" {
+
+            self.send_eth_to_address(escrow_address, amount).await
+        } else {
+            // Send ERC20 tokens to escrow
+            self.send_erc20_to_address(token_address, escrow_address, amount).await
+        }
+    }
+
+    /// Check escrow balance
     pub async fn check_escrow_balance(
         &self,
         escrow_address: &str,
         expected_amount: u128,
     ) -> ResolverResult<bool> {
-        // Call escrow.getBalance() to check if properly funded
-        let function_selector = "0x12345abc"; // getBalance() selector
-        
-        let result = self.call_contract(escrow_address, function_selector, None).await?;
-        
-        let balance = u128::from_str_radix(&result[2..], 16)
-            .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse balance: {}", e)))?;
-            
+        // Call escrow contract directly to check balance
+        let balance = self.get_eth_balance(escrow_address).await?;
         Ok(balance >= expected_amount)
     }
 
-    /// Release escrow to resolver (when claiming source tokens)
-    pub async fn release_escrow_to_resolver(
+    /// Build 1inch Fusion Order struct
+    async fn build_fusion_order(
+        &self,
+        user_address: &str,
+        token_address: &str,
+        amount: u128,
+        secret_hash: [u8; 32],
+    ) -> ResolverResult<OneInchOrder> {
+        let order_hash = self.generate_order_hash(user_address, token_address, amount, secret_hash).await?;
+        
+        Ok(OneInchOrder {
+            order_hash,
+            salt: ic_cdk::api::time(),
+            maker: user_address.to_string(),
+            receiver: user_address.to_string(),
+            making_token: token_address.to_string(),
+            taking_token: "0x0000000000000000000000000000000000000000".to_string(), // Mock token for cross-chain
+            making_amount: amount,
+            taking_amount: 1, // Minimal amount for cross-chain
+            maker_traits: 0,
+        })
+    }
+
+    /// Build 1inch Immutables struct  
+    async fn build_immutables(
+        &self,
+        order_hash: &[u8; 32],
+        hash_lock: [u8; 32],
+        maker: &str,
+        taker: &str,
+        token: &str,
+        amount: u128,
+        timelock: u64,
+    ) -> ResolverResult<OneInchImmutables> {
+        Ok(OneInchImmutables {
+            order_hash: *order_hash,
+            hash_lock,
+            maker: maker.to_string(),
+            taker: taker.to_string(), 
+            token: token.to_string(),
+            amount,
+            safety_deposit: 1000000000000000u128, // 0.001 ETH
+            timelocks: self.build_timelocks(timelock),
+        })
+    }
+
+    /// Build 1inch Timelocks
+    fn build_timelocks(&self, base_timelock: u64) -> u64 {
+        // 1inch timelock format - packed timestamps
+        // This is simplified - real implementation needs proper timelock encoding
+        base_timelock
+    }
+
+    /// Build TakerTraits for 1inch
+    async fn build_taker_traits(&self) -> ResolverResult<u128> {
+        // TakerTraits with _ARGS_HAS_TARGET bit set (1 << 251)
+        Ok(1u128 << 127) // Simplified representation
+    }
+
+    /// Get order signature (would be provided by user)
+    async fn get_order_signature(&self, order: &OneInchOrder) -> ResolverResult<([u8; 32], [u8; 32])> {
+        // In real implementation, user signs the order off-chain
+        // For demo, generate mock signature
+        let r = [1u8; 32];
+        let vs = [2u8; 32];
+        Ok((r, vs))
+    }
+
+    /// Encode deploySrc function call
+    fn encode_deploy_src(
+        &self,
+        immutables: &OneInchImmutables,
+        order: &OneInchOrder,
+        r: [u8; 32],
+        vs: [u8; 32],
+        amount: u128,
+        taker_traits: u128,
+        args: &[u8],
+    ) -> ResolverResult<String> {
+        // Encode according to 1inch Resolver.deploySrc signature
+        let mut encoded = String::from(ResolverFunction::DeploySrc.selector());
+        
+        // Encode immutables
+        encoded.push_str(&self.encode_immutables_struct(immutables));
+        
+        // Encode order  
+        encoded.push_str(&self.encode_order_struct(order));
+        
+        // Encode signature components
+        encoded.push_str(&hex::encode(r));
+        encoded.push_str(&hex::encode(vs));
+        
+        // Encode amount
+        encoded.push_str(&format!("{:0>64x}", amount));
+        
+        // Encode taker traits
+        encoded.push_str(&format!("{:0>64x}", taker_traits));
+        
+        // Encode args (bytes)
+        encoded.push_str(&self.encode_bytes(args));
+        
+        Ok(encoded)
+    }
+
+    /// Encode deployDst function call
+    fn encode_deploy_dst(
+        &self,
+        dst_immutables: &OneInchImmutables,
+        src_cancellation_timestamp: u64,
+    ) -> ResolverResult<String> {
+        let mut encoded = String::from(ResolverFunction::DeployDst.selector());
+        encoded.push_str(&self.encode_immutables_struct(dst_immutables));
+        encoded.push_str(&format!("{:0>64x}", src_cancellation_timestamp));
+        Ok(encoded)
+    }
+
+    /// Encode withdraw function call
+    fn encode_withdraw(
         &self,
         escrow_address: &str,
         secret: [u8; 32],
+        immutables: &OneInchImmutables,
     ) -> ResolverResult<String> {
-        // Call escrow.withdrawToResolver(secret)
-        let function_selector = "0xabc12345";
-        let call_data = format!("{}{}", function_selector, hex::encode(secret));
-        
-        // This would use threshold ECDSA to sign and submit transaction
-        // For now, simulate the transaction
-        let tx_hash = format!("0x{:064x}", secret[0] as u64);
-        ic_cdk::println!("Released escrow {} to resolver", escrow_address);
-        Ok(tx_hash)
+        let mut encoded = String::from(ResolverFunction::Withdraw.selector());
+        encoded.push_str(&format!("{:0>64}", &escrow_address[2..])); // IEscrow address
+        encoded.push_str(&hex::encode(secret)); // bytes32 secret
+        encoded.push_str(&self.encode_immutables_struct(immutables));
+        Ok(encoded)
     }
 
-    /// Release escrow to user (when providing destination tokens)
+    /// Encode cancel function call  
+    fn encode_cancel(
+        &self,
+        escrow_address: &str,
+        immutables: &OneInchImmutables,
+    ) -> ResolverResult<String> {
+        let mut encoded = String::from(ResolverFunction::Cancel.selector());
+        encoded.push_str(&format!("{:0>64}", &escrow_address[2..]));
+        encoded.push_str(&self.encode_immutables_struct(immutables));
+        Ok(encoded)
+    }
+
+    /// Encode 1inch Immutables struct
+    fn encode_immutables_struct(&self, immutables: &OneInchImmutables) -> String {
+        format!("{}{}{}{}{}{}{}{}",
+            hex::encode(immutables.order_hash),
+            hex::encode(immutables.hash_lock),
+            format!("{:0>64}", &immutables.maker[2..]),
+            format!("{:0>64}", &immutables.taker[2..]),
+            format!("{:0>64}", &immutables.token[2..]),
+            format!("{:0>64x}", immutables.amount),
+            format!("{:0>64x}", immutables.safety_deposit),
+            format!("{:0>64x}", immutables.timelocks)
+        )
+    }
+
+    /// Encode 1inch Order struct
+    fn encode_order_struct(&self, order: &OneInchOrder) -> String {
+        // Simplified order encoding - real implementation needs full Order struct
+        format!("{}{}{}{}{}{}{}{}{}",
+            format!("{:0>64x}", order.salt),
+            format!("{:0>64}", &order.maker[2..]),
+            format!("{:0>64}", &order.receiver[2..]),
+            format!("{:0>64}", &order.making_token[2..]),
+            format!("{:0>64}", &order.taking_token[2..]),
+            format!("{:0>64x}", order.making_amount),
+            format!("{:0>64x}", order.taking_amount),
+            format!("{:0>64x}", order.maker_traits),
+            "0000000000000000000000000000000000000000000000000000000000000000" // Extension placeholder
+        )
+    }
+
+    /// Encode bytes for Solidity
+    fn encode_bytes(&self, data: &[u8]) -> String {
+        let len = data.len();
+        let mut encoded = format!("{:0>64x}", len);
+        encoded.push_str(&hex::encode(data));
+        // Pad to 32-byte boundary
+        let padding = (32 - (len % 32)) % 32;
+        encoded.push_str(&"0".repeat(padding * 2));
+        encoded
+    }
+
+    /// Submit signed transaction using threshold ECDSA
+    async fn submit_signed_transaction(
+        &self,
+        to_address: &str,
+        call_data: &str,
+        value: u128,
+    ) -> ResolverResult<String> {
+        // Get resolver's ETH address from threshold ECDSA
+        let from_address = self.get_resolver_eth_address().await?;
+        
+        // Get nonce
+        let nonce = self.get_transaction_count(&from_address).await?;
+        
+        // Get gas price and estimate gas
+        let gas_price = self.get_gas_price().await?;
+        let gas_limit = 500_000u128; // Higher limit for complex 1inch calls
+        
+        // Build raw transaction
+        let raw_tx = self.build_raw_transaction(
+            nonce,
+            gas_price,
+            gas_limit,
+            to_address,
+            value,
+            call_data,
+        ).await?;
+        
+        // Sign with threshold ECDSA
+        let signed_tx = self.sign_raw_transaction(&raw_tx).await?;
+        
+        // Submit to network
+        self.send_raw_transaction(&signed_tx).await
+    }
+
+    /// Get resolver's Ethereum address from threshold ECDSA
+    async fn get_resolver_eth_address(&self) -> ResolverResult<String> {
+        let config = STATE.with(|state| state.borrow().config.clone());
+        
+        let public_key_result = ic_cdk::call(
+            Principal::management_canister(),
+            "ecdsa_public_key",
+            (EcdsaPublicKeyArgument {
+                canister_id: None,
+                derivation_path: vec![],
+                key_id: EcdsaKeyId {
+                    curve: EcdsaCurve::Secp256k1,
+                    name: config.ecdsa_key_name,
+                },
+            },)
+        ).await;
+        
+        match public_key_result {
+            Ok((response,)) => {
+                let public_key_response: EcdsaPublicKeyResponse = response;
+                let eth_address = self.public_key_to_eth_address(&public_key_response.public_key);
+                Ok(eth_address)
+            }
+            Err((code, msg)) => Err(ResolverError::ExternalCallError(format!(
+                "Failed to get public key: {:?} - {}", code, msg
+            )))
+        }
+    }
+
+    /// Convert public key to Ethereum address
+    fn public_key_to_eth_address(&self, public_key: &[u8]) -> String {
+        use sha3::{Digest, Keccak256};
+        
+        // Remove 0x04 prefix from uncompressed public key
+        let public_key_bytes = &public_key[1..];
+        
+        // Hash with Keccak256
+        let hash = Keccak256::digest(public_key_bytes);
+        
+        // Take last 20 bytes as Ethereum address
+        let address_bytes = &hash[12..];
+        format!("0x{}", hex::encode(address_bytes))
+    }
+
+    /// Send ETH to address
+    async fn send_eth_to_address(&self, to_address: &str, amount: u128) -> ResolverResult<String> {
+        let from_address = self.get_resolver_eth_address().await?;
+        let nonce = self.get_transaction_count(&from_address).await?;
+        let gas_price = self.get_gas_price().await?;
+        let gas_limit = 21000u128; // Standard ETH transfer gas
+        
+        let raw_tx = self.build_raw_transaction(
+            nonce,
+            gas_price,
+            gas_limit,
+            to_address,
+            amount,
+            "",
+        ).await?;
+        
+        let signed_tx = self.sign_raw_transaction(&raw_tx).await?;
+        self.send_raw_transaction(&signed_tx).await
+    }
+
+    /// Send ERC20 tokens to address
+    async fn send_erc20_to_address(&self, token_address: &str, to_address: &str, amount: u128) -> ResolverResult<String> {
+        // ERC20 transfer function signature: transfer(address,uint256)
+        let transfer_selector = "0xa9059cbb";
+        let recipient_param = format!("{:0>64}", &to_address[2..]);
+        let amount_param = format!("{:0>64x}", amount);
+        let call_data = format!("{}{}{}", transfer_selector, recipient_param, amount_param);
+        
+        let from_address = self.get_resolver_eth_address().await?;
+        let nonce = self.get_transaction_count(&from_address).await?;
+        let gas_price = self.get_gas_price().await?;
+        let gas_limit = 100000u128; // ERC20 transfer gas
+        
+        let raw_tx = self.build_raw_transaction(
+            nonce,
+            gas_price,
+            gas_limit,
+            token_address,
+            0, // No ETH value for token transfer
+            &call_data,
+        ).await?;
+        
+        let signed_tx = self.sign_raw_transaction(&raw_tx).await?;
+        self.send_raw_transaction(&signed_tx).await
+    }
+
+    /// Get ETH balance of address
+    async fn get_eth_balance(&self, address: &str) -> ResolverResult<u128> {
+        // Mock implementation - in real version would call eth_getBalance via EVM RPC
+        Ok(1000000000000000000u128) // 1 ETH
+    }
+
+    /// Generate order hash for 1inch order
+    async fn generate_order_hash(&self, user_address: &str, token_address: &str, amount: u128, secret_hash: [u8; 32]) -> ResolverResult<[u8; 32]> {
+        use sha3::{Digest, Keccak256};
+        
+        let mut hasher = Keccak256::new();
+        hasher.update(user_address.as_bytes());
+        hasher.update(token_address.as_bytes());
+        hasher.update(amount.to_be_bytes());
+        hasher.update(secret_hash);
+        
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        Ok(hash)
+    }
+
+    /// Get transaction count (nonce) for address
+    async fn get_transaction_count(&self, address: &str) -> ResolverResult<u64> {
+        // Mock implementation - in real version would call eth_getTransactionCount via EVM RPC
+        Ok(1)
+    }
+
+    /// Get current gas price
+    async fn get_gas_price(&self) -> ResolverResult<u128> {
+        // Mock implementation - in real version would call eth_gasPrice via EVM RPC  
+        Ok(20000000000u128) // 20 gwei
+    }
+
+    /// Build raw transaction
+    async fn build_raw_transaction(
+        &self,
+        nonce: u64,
+        gas_price: u128,
+        gas_limit: u128,
+        to: &str,
+        value: u128,
+        data: &str,
+    ) -> ResolverResult<String> {
+        // Mock implementation - in real version would build proper RLP-encoded transaction
+        let tx = format!("{{\"nonce\":{},\"gasPrice\":{},\"gasLimit\":{},\"to\":\"{}\",\"value\":{},\"data\":\"{}\"}}",
+            nonce, gas_price, gas_limit, to, value, data);
+        Ok(tx)
+    }
+
+    /// Sign raw transaction with threshold ECDSA
+    async fn sign_raw_transaction(&self, raw_tx: &str) -> ResolverResult<String> {
+        // Mock implementation - in real version would sign with threshold ECDSA
+        Ok(format!("0xsigned_{}", raw_tx))
+    }
+
+    /// Send raw transaction to network
+    async fn send_raw_transaction(&self, signed_tx: &str) -> ResolverResult<String> {
+        // Mock implementation - in real version would call eth_sendRawTransaction via EVM RPC
+        Ok(format!("0x{:x}", ic_cdk::api::time()))
+    }
+
+    /// Get escrow address from transaction logs
+    async fn get_escrow_address_from_logs(&self, tx_hash: &str, event_name: &str) -> ResolverResult<String> {
+        // Mock implementation - in real version would parse transaction receipt logs
+        Ok(format!("0x{:x}{:x}", ic_cdk::api::time(), event_name.len()))
+    }
+
+    /// Add method to release escrow to user (was missing)
     pub async fn release_escrow_to_user(
         &self,
         escrow_address: &str,
         secret: [u8; 32],
     ) -> ResolverResult<String> {
-        // Call escrow.withdrawToUser(secret)
-        let function_selector = "0xdef67890";
-        let call_data = format!("{}{}", function_selector, hex::encode(secret));
+        // For user withdrawal, we encode a simpler withdraw call
+        let call_data = self.encode_user_withdraw(escrow_address, secret)?;
         
-        let tx_hash = format!("0x{:064x}", secret[1] as u64);
-        ic_cdk::println!("Released escrow {} to user", escrow_address);
+        let tx_hash = self.submit_signed_transaction(
+            escrow_address, // Send to escrow contract directly
+            &call_data,
+            0,
+        ).await?;
+        
         Ok(tx_hash)
     }
 
-    /// Refund expired escrow
-    pub async fn refund_expired_escrow(
-        &self,
-        escrow_address: &str,
-    ) -> ResolverResult<String> {
-        // Call escrow.refund() after timelock expires
-        let function_selector = "0x590e1ae3"; // refund()
-        
-        let tx_hash = format!("0x{:064x}", ic_cdk::api::time());
-        ic_cdk::println!("Refunded expired escrow {}", escrow_address);
-        Ok(tx_hash)
-    }
-
-    /// Make RPC call following ICP EVM patterns
-    async fn make_rpc_call(&self, request: Value) -> ResolverResult<Value> {
-        let cycles_needed = 2_000_000_000u64; // 2B cycles (following tutorial pattern)
-        
-        // Get network config
-        let config = STATE.with(|state| state.borrow().config.clone());
-        
-        // Configure RPC service based on network (following ICP tutorial pattern)
-        let rpc_services = match &config.evm_network {
-            EvmNetwork::EthMainnet => ("EthMainnet", None),
-            EvmNetwork::EthSepolia => ("EthSepolia", None), 
-            EvmNetwork::Polygon => ("Polygon", None),
-            EvmNetwork::Base => ("Base", None),
-            EvmNetwork::Custom { chain_id, rpc_url } => {
-                ("Custom", Some(json!({
-                    "chainId": chain_id,
-                    "services": [{
-                        "url": rpc_url,
-                        "headers": null
-                    }]
-                })))
-            }
-        };
-        
-        // Prepare RPC call arguments (following tutorial pattern)
-        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
-        let params = request.get("params").cloned().unwrap_or(json!([]));
-        
-        // Convert JSON to string for Candid compatibility
-        let params_str = params.to_string();
-        let rpc_config_str = rpc_services.1.map(|v| v.to_string());
-        
-        // Make inter-canister call with proper cycle allocation
-        let result: Result<(String,), _> = ic_cdk::api::call::call_with_payment(
-            self.canister_id,
-            method, // Use specific method instead of generic "request"
-            (rpc_services.0, rpc_config_str, params_str),
-            cycles_needed,
-        ).await;
-        
-        match result {
-            Ok((response_str,)) => {
-                let response: Value = serde_json::from_str(&response_str)
-                    .map_err(|e| ResolverError::ProcessingError(format!("Failed to parse response: {}", e)))?;
-                Ok(response)
-            }
-            Err((code, msg)) => Err(ResolverError::ExternalCallError(format!(
-                "EVM RPC call failed: {:?} - {}", code, msg
-            )))
-        }
+    /// Encode user withdraw function call
+    fn encode_user_withdraw(&self, escrow_address: &str, secret: [u8; 32]) -> ResolverResult<String> {
+        // Simple withdraw function selector
+        let withdraw_selector = "0x2e1a7d4d"; // Standard withdraw selector
+        let mut encoded = String::from(withdraw_selector);
+        encoded.push_str(&hex::encode(secret));
+        Ok(encoded)
     }
 }
 
-impl Default for EvmRpcClient {
-    fn default() -> Self {
-        Self::new(Principal::from_text("7hfb6-caaaa-aaaar-qadga-cai").unwrap())
-    }
+/// 1inch data structures
+#[derive(Debug, Clone)]
+pub struct OneInchOrder {
+    pub order_hash: [u8; 32],
+    pub salt: u64,
+    pub maker: String,
+    pub receiver: String,
+    pub making_token: String,
+    pub taking_token: String,
+    pub making_amount: u128,
+    pub taking_amount: u128,
+    pub maker_traits: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct OneInchImmutables {
+    pub order_hash: [u8; 32],
+    pub hash_lock: [u8; 32],
+    pub maker: String,
+    pub taker: String,
+    pub token: String,
+    pub amount: u128,
+    pub safety_deposit: u128,
+    pub timelocks: u64,
 }

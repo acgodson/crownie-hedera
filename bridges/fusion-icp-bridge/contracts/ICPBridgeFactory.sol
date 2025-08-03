@@ -1,36 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./interfaces/IEscrowFactory.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-/**
- * @title ICPBridgeFactory
- * @notice Wrapper contract for ICP resolver to deploy 1inch-style escrows
- * @dev This contract interfaces with 1inch EscrowFactory to create cross-chain swaps
- */
-contract ICPBridgeFactory is ReentrancyGuard {
-    IEscrowFactory public immutable oneinchFactory;
-    address public immutable icpResolver; // ICP canister via threshold ECDSA
+contract ICPBridgeFactory {
+    address public immutable icpResolver;
+    uint256 public escrowCount;
     
-    // WICP token address for ICP representation
-    address public immutable wicpToken;
+    mapping(bytes32 => address) public escrows;
     
-    event SourceEscrowDeployed(
+    event EscrowDeployed(
+        bytes32 indexed escrowId,
         address indexed escrow,
-        address indexed user,
-        address indexed token,
+        address indexed depositor,
+        address recipient,
         uint256 amount,
-        bytes32 secretHash
-    );
-    
-    event DestEscrowDeployed(
-        address indexed escrow,
-        address indexed recipient,
-        address indexed token,
-        uint256 amount,
-        bytes32 secretHash
+        bytes32 hashlock,
+        uint256 timelock
     );
     
     modifier onlyICPResolver() {
@@ -38,103 +23,93 @@ contract ICPBridgeFactory is ReentrancyGuard {
         _;
     }
     
-    constructor(
-        address _oneinchFactory,
-        address _icpResolver,
-        address _wicpToken
-    ) {
-        oneinchFactory = IEscrowFactory(_oneinchFactory);
+    constructor(address _icpResolver) {
         icpResolver = _icpResolver;
-        wicpToken = _wicpToken;
     }
     
-    /**
-     * @notice Deploy source escrow (user deposits tokens)
-     * @param user Address that will deposit tokens
-     * @param token Token contract address
-     * @param amount Amount to be escrowed
-     * @param secretHash Hash of HTLC secret
-     * @param timelock Expiration timestamp
-     * @return escrow Address of deployed escrow contract
-     */
-    function deploySourceEscrow(
-        address user,
-        address token,
-        uint256 amount,
-        bytes32 secretHash,
-        uint256 timelock
-    ) external onlyICPResolver nonReentrant returns (address escrow) {
-        // Deploy source escrow using 1inch factory
-        escrow = oneinchFactory.deploySrc(
-            user,
-            token,
-            amount,
-            secretHash,
-            timelock
-        );
-        
-        emit SourceEscrowDeployed(escrow, user, token, amount, secretHash);
-    }
-    
-    /**
-     * @notice Deploy destination escrow (resolver funds with WICP)
-     * @param recipient Address that will receive tokens
-     * @param token Token contract address (should be WICP for ICP swaps)
-     * @param amount Amount to be escrowed
-     * @param secretHash Hash of HTLC secret
-     * @param timelock Expiration timestamp
-     * @return escrow Address of deployed escrow contract
-     */
-    function deployDestEscrow(
+    function deployEscrow(
+        address depositor,
         address recipient,
-        address token,
         uint256 amount,
-        bytes32 secretHash,
+        bytes32 hashlock,
         uint256 timelock
-    ) external onlyICPResolver nonReentrant returns (address escrow) {
-        // For ICP swaps, token should be WICP
-        require(token == wicpToken, "Dest escrow must use WICP token");
+    ) external onlyICPResolver returns (bytes32 escrowId, address escrow) {
+        escrowId = keccak256(abi.encodePacked(depositor, recipient, amount, hashlock, timelock, escrowCount));
         
-        // Transfer WICP from resolver to this contract first
-        IERC20(wicpToken).transferFrom(icpResolver, address(this), amount);
+        // Deploy simple HTLC escrow
+        escrow = address(new SimpleHTLC(depositor, recipient, amount, hashlock, timelock));
+        escrows[escrowId] = escrow;
+        escrowCount++;
         
-        // Deploy destination escrow using 1inch factory
-        escrow = oneinchFactory.deployDst(
-            recipient,
-            token,
-            amount,
-            secretHash,
-            timelock
-        );
-        
-        // Fund the escrow with WICP
-        IERC20(wicpToken).transfer(escrow, amount);
-        
-        emit DestEscrowDeployed(escrow, recipient, token, amount, secretHash);
+        emit EscrowDeployed(escrowId, escrow, depositor, recipient, amount, hashlock, timelock);
     }
     
-    /**
-     * @notice Emergency function to withdraw stuck tokens
-     * @dev Only callable by ICP resolver
-     */
-    function emergencyWithdraw(address token, uint256 amount) 
-        external 
-        onlyICPResolver 
-    {
-        IERC20(token).transfer(icpResolver, amount);
+    function getEscrow(bytes32 escrowId) external view returns (address) {
+        return escrows[escrowId];
+    }
+}
+
+contract SimpleHTLC {
+    uint256 public amount;
+    bytes32 public hashlock;
+    uint256 public timelock;
+    address public depositor;
+    address public recipient;
+    bool public withdrawn;
+    bool public refunded;
+    
+    event Deposited(address indexed depositor, uint256 amount);
+    event Withdrawn(address indexed recipient, bytes32 preimage);
+    event Refunded(address indexed depositor);
+    
+    constructor(
+        address _depositor,
+        address _recipient,
+        uint256 _amount,
+        bytes32 _hashlock,
+        uint256 _timelock
+    ) {
+        depositor = _depositor;
+        recipient = _recipient;
+        amount = _amount;
+        hashlock = _hashlock;
+        timelock = _timelock;
     }
     
-    /**
-     * @notice Get WICP token address
-     */
-    function getWICPToken() external view returns (address) {
-        return wicpToken;
+    function deposit() external payable {
+        require(msg.sender == depositor, "Only depositor");
+        require(msg.value == amount, "Wrong amount");
+        require(!withdrawn && !refunded, "Already completed");
+        
+        emit Deposited(msg.sender, msg.value);
     }
     
-    /**
-     * @notice Get 1inch factory address
-     */
-    function getOneinchFactory() external view returns (address) {
-        return address(oneinchFactory);
+    function withdraw(bytes32 preimage) external {
+        require(msg.sender == recipient, "Only recipient");
+        require(!withdrawn && !refunded, "Already completed");
+        require(sha256(abi.encodePacked(preimage)) == hashlock, "Invalid preimage");
+        require(block.timestamp < timelock, "Expired");
+        require(address(this).balance >= amount, "Not funded");
+        
+        withdrawn = true;
+        payable(recipient).transfer(amount);
+        
+        emit Withdrawn(recipient, preimage);
+    }
+    
+    function refund() external {
+        require(msg.sender == depositor, "Only depositor");
+        require(!withdrawn && !refunded, "Already completed");
+        require(block.timestamp >= timelock, "Not expired");
+        require(address(this).balance >= amount, "Not funded");
+        
+        refunded = true;
+        payable(depositor).transfer(amount);
+        
+        emit Refunded(depositor);
+    }
+    
+    function isFunded() external view returns (bool) {
+        return address(this).balance >= amount;
     }
 }
