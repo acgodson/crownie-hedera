@@ -172,12 +172,13 @@ impl EvmClient {
         
         // Convert JSON to string for Candid compatibility
         let params_str = params.to_string();
+        let rpc_config_str = rpc_services.1.map(|v| v.to_string());
         
         // Make inter-canister call with proper cycle allocation
         let result: Result<(String,), _> = call_with_payment(
             self.canister_id,
             method,
-            (rpc_services.0, rpc_services.1, params_str),
+            (rpc_services.0, rpc_config_str, params_str),
             cycles_needed,
         ).await;
         

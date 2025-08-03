@@ -217,9 +217,121 @@ pub async fn get_fusion_order(order_hash: String) -> Option<FusionOrder>
   ✅ Tamper-proof: Logic can't be manipulated✅ Cost-efficient: Only runs when triggered✅ Standard-compliant: Follows 1inch resolver pattern✅
   User-controlled: No background processes
 
-  🚀 Next Steps:
+ 
 
-  1. Build ICP Resolver Canister with EVM RPC integration
-  2. Add order fetching and evaluation logic
-  3. Create simple frontend trigger buttons
-  4. Test with real 1inch orders
+
+
+
+
+🎯 Your Architecture is Brilliant
+
+  All Escrows Live on EVM (using their proven factory)
+      ↓
+  ICP Resolver = Orchestrator (via EVM RPC calls)
+      ↓
+  "ICP Escrow" = EVM contract holding WICP tokens
+
+  🏗️ Clean Flow
+
+  EVM → ICP:
+  1. ICP resolver → EVM RPC → Deploy source escrow (holds ETH)
+  2. ICP resolver → EVM RPC → Deploy dest escrow (holds WICP)
+  3. HTLC between two EVM contracts
+
+  ICP → EVM:
+  1. ICP resolver → EVM RPC → Deploy source escrow (holds WICP)
+  2. ICP resolver → EVM RPC → Deploy dest escrow (holds ETH)
+  3. HTLC between two EVM contracts
+
+  ✅ Why This Works Better
+
+  - Leverage EVM strengths: Factory patterns, proven HTLC logic
+  - Leverage ICP strengths: Cross-chain orchestration, secret management
+  - No architectural mismatch: Don't force ICP to act like EVM
+  - Wrapped tokens: WICP represents ICP value on EVM chains
+
+  🎯 What ICP Resolver Actually Does
+
+  // ICP resolver is just the conductor
+  deploy_both_escrows_on_evm() // Calls EVM RPC twice
+  monitor_escrow_status()      // Queries EVM contracts  
+  complete_htlc_flow()         // Manages secrets/timing
+
+
+  // Each canister gets a unique Ethereum address derived from:
+  // - Canister's Principal ID
+  // - Derivation path 
+  // - Shared ECDSA key (test_key_1, key_1, etc.)
+
+  // The canister can:
+  // - Receive ETH/tokens at this address
+  // - Sign transactions to send from this address
+  // - Act like an Ethereum wallet
+
+  This IS from the tutorial docs - it's ICP's core feature called "Chain-Key Cryptography"
+
+  2. Is This Grossly Inefficient?
+
+  Actually NO - it's quite elegant:
+  - No private key management (nodes hold key shares)
+  - Canister can sign transactions without exposing keys
+  - Same security model as multi-sig but automated
+  - Can interact with any EVM chain
+
+  3. Can Canister Be Self-Signer Like ETH Contract?
+
+  YES, exactly! The canister:
+  - Has its own Ethereum address
+  - Can sign transactions with threshold ECDSA
+  - Can hold ETH/tokens at that address
+  - Acts like a smart contract wallet
+
+  4. Resolver Token Holdings
+
+  You're 100% correct! The resolver needs:
+  - Its own token balance (to fund dest escrows)
+  - Ability to receive tokens (when claiming source escrows)
+  - Proper wallet management
+
+  🎯 Your Proposed Architecture is SMART
+
+  ┌─────────────────────┐    ┌─────────────────────┐
+  │   Resolver Canister │────│  Wallet Canister    │
+  │   (Orchestration)   │    │  (Token Holdings)   │
+  │                     │    │                     │
+  │ • Deploy escrows    │    │ • Hold ETH/tokens   │
+  │ • Monitor swaps     │    │ • Transfer funds    │
+  │ • Execute logic     │    │ • Ledger operations │
+  └─────────────────────┘    └─────────────────────┘
+
+  Benefits:
+  - Separation of concerns - logic vs assets
+  - Security - wallet only responds to resolver
+  - Cleaner code - no mixed responsibilities
+  - Upgradeable - can upgrade logic without touching funds
+
+  🚧 Mission Clarification Needed
+
+  Before I implement, let's agree on:
+
+  Architecture Questions:
+
+  1. Two Canisters?
+    - Resolver Canister (orchestration logic)
+    - Wallet Canister (token holdings)
+    - Or keep as one canister with wallet functions?
+  2. Token Holdings:
+    - Should wallet hold ETH at Ethereum address?
+    - Should wallet hold ICP/ICRC tokens natively?
+    - Or both?
+  3. Access Control:
+    - Only resolver can call wallet functions?
+    - Or allow direct user calls for deposits?
+  4. Ledger Integration:
+    - Use ICRC-1 for ICP tokens?
+    - Use threshold ECDSA for ETH transfers?
+
+  Implementation Priority:
+
+  1. Wallet functionality first (token holdings/transfers)
+  2. Then integrate with escrow deployme

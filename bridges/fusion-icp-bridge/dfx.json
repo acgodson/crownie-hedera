@@ -6,6 +6,16 @@
       "package": "resolver_canister_backend",
       "candid": "src/resolver_canister_backend/resolver_canister_backend.did"
     },
+    "wallet_canister": {
+      "type": "rust",
+      "package": "wallet_canister",
+      "candid": "src/wallet_canister/wallet_canister.did"
+    },
+    "icp_escrow_canister": {
+      "type": "rust",
+      "package": "icp_escrow_canister",
+      "candid": "src/icp_escrow_canister/icp_escrow_canister.did"
+    },
     "evm_rpc": {
       "type": "custom",
       "candid": "https://github.com/internet-computer-protocol/evm-rpc-canister/releases/latest/download/evm_rpc.did",

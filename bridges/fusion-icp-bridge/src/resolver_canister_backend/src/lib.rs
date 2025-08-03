@@ -9,185 +9,417 @@ mod external;
 
 use types::*;
 use utils::ResolverUtils;
-use external::{HttpClient, EvmRpcClient};
-
+use external::{EvmRpcClient, IcpEscrowParams, deploy_icp_escrow, check_icp_escrow_funding, release_icp_escrow};
 
 thread_local! {
-    static STATE: RefCell<ResolverState> = RefCell::new(ResolverState::default());
+    static STATE: RefCell<ResolverOrchestrator> = RefCell::new(ResolverOrchestrator::default());
 }
 
 #[derive(Default)]
-struct ResolverState {
-    active_orders: HashMap<String, CrossChainOrder>,
-    active_escrows: HashMap<String, HTLCEscrow>,
+struct ResolverOrchestrator {
+    active_swaps: HashMap<String, CrossChainSwap>,
     completed_swaps: HashMap<String, u64>,
-    resolver_config: ResolverConfig,
+    config: OrchestratorConfig,
+    secret_store: HashMap<String, [u8; 32]>,
+    wallet_canister: Option<Principal>,
+    created_icp_escrows: HashMap<String, Principal>, 
+    escrow_count: u64, 
 }
 
 
-#[ic_cdk::update]
-pub async fn derive_icp_principal(eth_address: String) -> ResolverResult<Principal> {
-    ResolverUtils::derive_icp_principal(&eth_address)
-}
-
-#[ic_cdk::query]
-pub fn get_active_orders_status() -> Vec<CrossChainOrder> {
+#[ic_cdk::init]
+fn init(wallet_canister: Principal) {
     STATE.with(|state| {
-        let orders = state.borrow().active_orders.values().cloned().collect();
-        orders
-    })
-}
-
-#[ic_cdk::update]
-pub async fn evaluate_and_bid_orders() -> ResolverResult<Vec<BidResult>> {
-    let mut results = Vec::new();
-    
-  
-    let (api_key, evm_canister, alchemy_key, custom_url) = STATE.with(|state| {
-        let config = &state.borrow().resolver_config;
-        (
-            config.oneinch_api_key.clone(), 
-            config.evm_rpc_canister,
-            config.alchemy_api_key.clone(),
-            config.custom_rpc_url.clone(),
-        )
+        state.borrow_mut().wallet_canister = Some(wallet_canister);
     });
-    
-    // Fetch current orders from 1inch via HTTP API
-    let orders = HttpClient::fetch_fusion_orders(api_key.as_deref(), 1).await?;
-    
-    // Convert 1inch orders to our format and evaluate profitability
-    for oneinch_order in orders {
-        let order = convert_oneinch_order(oneinch_order)?;
-        
-        // Evaluate profitability
-        let profitability = calculate_profitability(&order).await?;
-        
-        if profitability.estimated_profit > get_min_profit_threshold() {
-            // Create EVM client with appropriate provider
-            let evm_client = if let Some(ref alchemy_key) = alchemy_key {
-                EvmRpcClient::new_with_alchemy(evm_canister, alchemy_key.clone())
-            } else if let Some(ref custom_url) = custom_url {
-                EvmRpcClient::new_with_custom_provider(evm_canister, custom_url.clone())
-            } else {
-                EvmRpcClient::new(evm_canister) // Default: consensus providers
-            };
-            
-            let bid_success = submit_bid_via_evm(&evm_client, &order).await?;
-            
-            results.push(BidResult {
-                order_hash: order.order_hash.clone(),
-                bid_accepted: bid_success,
-                profitability_score: profitability.score,
-                estimated_profit: profitability.estimated_profit,
-            });
-        }
-    }
-    
-    Ok(results)
 }
 
+
 #[ic_cdk::update]
-pub async fn create_atomic_escrows(order: CrossChainOrder) -> ResolverResult<EscrowPair> {
-
-    ResolverUtils::validate_order_hash(&order.order_hash)?;
-    ResolverUtils::validate_token_address(&order.maker_asset)?;
-    ResolverUtils::validate_token_address(&order.taker_asset)?;
-    
-
-    let icp_recipient = ResolverUtils::derive_icp_principal(&order.maker)?;
-    
-    let icp_escrow_id = create_icp_htlc(
-        order.taking_amount,
-        icp_recipient,
-        order.hash_lock,
-        order.time_lock,
-    )?;
-    
-    let evm_canister = STATE.with(|state| state.borrow().resolver_config.evm_rpc_canister);
-    let evm_client = EvmRpcClient::new(evm_canister);
-    let eth_escrow_address = evm_client.create_ethereum_htlc(&order).await?;
-    
-    let escrow_pair = EscrowPair {
-        ethereum_escrow: eth_escrow_address,
-        icp_escrow: icp_escrow_id,
-    };
-    
+pub async fn set_wallet_canister(wallet_canister: Principal) -> ResolverResult<()> {
     STATE.with(|state| {
-        state.borrow_mut().active_orders.insert(order.order_hash.clone(), order);
+        state.borrow_mut().wallet_canister = Some(wallet_canister);
     });
-    
-    Ok(escrow_pair)
-}
-
-#[ic_cdk::update]
-pub async fn complete_atomic_swap(order_hash: String, secret: [u8; 32]) -> ResolverResult<()> {
-
-    let hash_array = ResolverUtils::generate_secret_hash(&secret);
-    
-    STATE.with(|state| {
-        let mut state_mut = state.borrow_mut();
-        
-        if let Some(order) = state_mut.active_orders.get(&order_hash) {
-            if hash_array != order.hash_lock {
-                return Err(ResolverError::InvalidInput("Invalid secret for order".to_string()));
-            }
-            state_mut.completed_swaps.insert(order_hash.clone(), ic_cdk::api::time());
-            state_mut.active_orders.remove(&order_hash);
-            
-            Ok(())
-        } else {
-            Err(ResolverError::InvalidInput("Order not found".to_string()))
-        }
-    })
-}
-
-#[ic_cdk::update]
-pub async fn fetch_orders_from_oneinch(chain_id: u64) -> ResolverResult<Vec<OneInchOrder>> {
-    let api_key = STATE.with(|state| state.borrow().resolver_config.oneinch_api_key.clone());
-    HttpClient::fetch_fusion_orders(api_key.as_deref(), chain_id).await
-}
-
-#[ic_cdk::update]
-pub async fn get_price_quote(
-    from_token: String,
-    to_token: String,
-    amount: String,
-    chain_id: u64,
-) -> ResolverResult<OneInchQuoteResponse> {
-    let api_key = STATE.with(|state| state.borrow().resolver_config.oneinch_api_key.clone());
-    HttpClient::get_quote(&from_token, &to_token, &amount, api_key.as_deref(), chain_id).await
-}
-
-#[ic_cdk::update]
-pub async fn verify_ethereum_settlement(tx_hash: String) -> ResolverResult<bool> {
-    let evm_canister = STATE.with(|state| state.borrow().resolver_config.evm_rpc_canister);
-    let evm_client = EvmRpcClient::new(evm_canister);
-    evm_client.verify_transaction_settlement(&tx_hash).await
-}
-
-#[ic_cdk::update]
-pub async fn update_resolver_config(config: ResolverConfig) -> ResolverResult<()> {
-    for token in &config.supported_tokens {
-        ResolverUtils::validate_token_address(token)?;
-    }
-    
-    STATE.with(|state| {
-        state.borrow_mut().resolver_config = config;
-    });
-    
     Ok(())
 }
 
 #[ic_cdk::query]
-pub fn get_resolver_config() -> ResolverConfig {
-    STATE.with(|state| state.borrow().resolver_config.clone())
+pub fn get_wallet_canister() -> Option<Principal> {
+    STATE.with(|state| state.borrow().wallet_canister)
+}
+
+
+#[ic_cdk::update]
+pub async fn get_wallet_eth_address() -> ResolverResult<String> {
+    let wallet_canister = STATE.with(|state| state.borrow().wallet_canister)
+        .ok_or_else(|| ResolverError::ProcessingError("Wallet canister not set".to_string()))?;
+    
+    let result: Result<(Result<String, String>,), _> = 
+        ic_cdk::call(wallet_canister, "get_eth_address", ()).await;
+    
+    match result {
+        Ok((Ok(address),)) => Ok(address),
+        Ok((Err(error),)) => Err(ResolverError::ExternalCallError(format!("Wallet error: {}", error))),
+        Err((code, msg)) => Err(ResolverError::ExternalCallError(format!("Call failed: {:?} - {}", code, msg))),
+    }
+}
+
+
+#[ic_cdk::update]
+pub async fn initiate_evm_to_icp_swap(
+    user_eth_address: String,
+    user_icp_principal: String,
+    source_token: String,      // ETH/USDC address
+    dest_token: String,        // WICP address  
+    amount: u128,
+    timelock_duration: u64,
+) -> ResolverResult<SwapInitiationResult> {
+    // Generate swap ID and HTLC params
+    let swap_id = format!("evm_to_icp_{}", ic_cdk::api::time());
+    let secret = ResolverUtils::generate_htlc_secret();
+    let secret_hash = ResolverUtils::generate_secret_hash(&secret);
+    let timelock = ic_cdk::api::time() / 1_000_000_000 + timelock_duration; // Convert to seconds
+    
+    // Parse ICP principal from string
+    let recipient_principal = Principal::from_text(&user_icp_principal)
+        .map_err(|e| ResolverError::InvalidInput(format!("Invalid ICP principal: {}", e)))?;
+    let dest_token_ledger = Principal::from_text(&dest_token)
+        .map_err(|e| ResolverError::InvalidInput(format!("Invalid destination token ledger: {}", e)))?;
+    
+    let evm_client = get_evm_client();
+    
+    // 1. Deploy source escrow on EVM (user will fund this)
+    let source_escrow = evm_client.deploy_source_escrow(
+        &user_eth_address,   
+        &source_token,
+        amount,
+        secret_hash,
+        timelock,
+    ).await?;
+    
+    // 2. Deploy destination escrow on ICP (user receives native ICP/ICRC tokens)
+    let dest_escrow_canister = create_icp_escrow_for_swap(
+        &format!("{}_dest", swap_id), 
+        secret_hash,
+        timelock,
+        amount,
+        dest_token_ledger,         
+        ic_cdk::id(),           
+        recipient_principal,       
+    ).await?;
+    
+    // 3. Resolver funds ICP destination escrow with native tokens
+    fund_icp_dest_escrow(&dest_escrow_canister, &dest_token_ledger, amount).await?;
+    
+    // Store swap details
+    STATE.with(|state| {
+        let swap = CrossChainSwap {
+            swap_id: swap_id.clone(),
+            direction: SwapDirection::EvmToIcp,
+            user_address: user_eth_address.clone(),
+            user_icp_principal: user_icp_principal.clone(),
+            source_token: source_token.clone(),
+            dest_token: dest_token.clone(),
+            amount,
+            secret_hash,
+            timelock,
+            source_escrow: Some(source_escrow.clone()),
+            dest_escrow: Some(dest_escrow_canister.to_text()), 
+            source_escrow_canister: None,
+            status: SwapStatus::EscrowsDeployed,
+            secret: Some(secret), 
+        };
+        state.borrow_mut().active_swaps.insert(swap_id.clone(), swap);
+        state.borrow_mut().secret_store.insert(swap_id.clone(), secret);
+    });
+    
+    let funding_instructions = FundingInstructions {
+        user_action: format!("Send {} of {} tokens to EVM escrow {}", amount, source_token, source_escrow),
+        required_amount: amount,
+        token_address: source_token,
+        deadline: timelock,
+    };
+    
+    Ok(SwapInitiationResult {
+        swap_id,
+        source_escrow_address: source_escrow,
+        dest_escrow_address: dest_escrow_canister.to_text(),
+        funding_instructions,
+    })
+}
+
+#[ic_cdk::update]
+pub async fn initiate_icp_to_evm_swap(
+    user_icp_principal: String,
+    user_eth_address: String,
+    source_token: String,      // WICP address
+    dest_token: String,        // ETH/USDC address
+    amount: u128,
+    timelock_duration: u64,
+) -> ResolverResult<SwapInitiationResult> {
+    let swap_id = format!("icp_to_evm_{}", ic_cdk::api::time());
+    let secret = ResolverUtils::generate_htlc_secret();
+    let secret_hash = ResolverUtils::generate_secret_hash(&secret);
+    let timelock = ic_cdk::api::time() / 1_000_000_000 + timelock_duration;
+    
+    // Parse ICP principal from string
+    let depositor_principal = Principal::from_text(&user_icp_principal)
+        .map_err(|e| ResolverError::InvalidInput(format!("Invalid ICP principal: {}", e)))?;
+    let recipient_principal = Principal::from_text(&user_eth_address)
+        .map_err(|e| ResolverError::InvalidInput(format!("Invalid recipient principal: {}", e)))?;
+    let token_ledger = Principal::from_text(&source_token)
+        .map_err(|e| ResolverError::InvalidInput(format!("Invalid token ledger: {}", e)))?;
+    
+    // 1. Deploy source escrow on ICP (user will deposit native ICP/ICRC tokens)
+    let source_escrow_canister = create_icp_escrow_for_swap(
+        &swap_id,
+        secret_hash,
+        timelock,
+        amount,
+        token_ledger,
+        depositor_principal,
+        recipient_principal,
+    ).await?;
+    
+    let evm_client = get_evm_client();
+    
+    // 2. Deploy destination escrow on EVM (resolver funds with ETH/USDC)
+    let dest_escrow = evm_client.deploy_dest_escrow(
+        &user_eth_address,   // User receives ETH/USDC here
+        &dest_token,
+        amount,
+        secret_hash,
+        timelock,
+    ).await?;
+    
+    // 3. Resolver funds destination escrow with wallet
+    fund_dest_escrow_via_wallet(&dest_escrow, &dest_token, amount).await?;
+    
+    STATE.with(|state| {
+        let swap = CrossChainSwap {
+            swap_id: swap_id.clone(),
+            direction: SwapDirection::IcpToEvm,
+            user_address: user_eth_address.clone(),
+            user_icp_principal: user_icp_principal.clone(),
+            source_token: source_token.clone(),
+            dest_token: dest_token.clone(),
+            amount,
+            secret_hash,
+            timelock,
+            source_escrow: Some(source_escrow_canister.to_text()), // ICP canister principal as string
+            dest_escrow: Some(dest_escrow.clone()),
+            source_escrow_canister: Some(source_escrow_canister), // Store the actual Principal
+            status: SwapStatus::EscrowsDeployed,
+            secret: Some(secret),
+        };
+        state.borrow_mut().active_swaps.insert(swap_id.clone(), swap);
+        state.borrow_mut().secret_store.insert(swap_id.clone(), secret);
+    });
+    
+    // Create funding instructions for user (for native ICP/ICRC tokens)
+    let funding_instructions = FundingInstructions {
+        user_action: format!("Send {} tokens to ICP escrow canister {}", amount, source_escrow_canister.to_text()),
+        required_amount: amount,
+        token_address: source_token, // This is the ICRC-1 ledger principal
+        deadline: timelock,
+    };
+    
+    Ok(SwapInitiationResult {
+        swap_id,
+        source_escrow_address: source_escrow_canister.to_text(), // ICP canister principal
+        dest_escrow_address: dest_escrow,
+        funding_instructions,
+    })
 }
 
 #[ic_cdk::query]
-pub fn get_active_orders() -> Vec<CrossChainOrder> {
+pub fn get_swap_details(swap_id: String) -> ResolverResult<CrossChainSwap> {
     STATE.with(|state| {
-        state.borrow().active_orders.values().cloned().collect()
+        let swaps = &state.borrow().active_swaps;
+        if let Some(swap) = swaps.get(&swap_id) {
+            Ok(swap.clone())
+        } else {
+            Err(ResolverError::OrderNotFound("Swap not found".to_string()))
+        }
+    })
+}
+
+#[ic_cdk::update]
+pub async fn check_escrow_funding(swap_id: String) -> ResolverResult<EscrowFundingStatus> {
+    let swap = STATE.with(|state| {
+        let swaps = &state.borrow().active_swaps;
+        swaps.get(&swap_id).cloned()
+    }).ok_or_else(|| ResolverError::OrderNotFound("Swap not found".to_string()))?;
+    
+    let evm_client = get_evm_client();
+    
+    let (source_funded, dest_funded) = match swap.direction {
+        SwapDirection::EvmToIcp => {
+            let source_funded = if let Some(ref escrow) = swap.source_escrow {
+                evm_client.check_escrow_balance(escrow, swap.amount).await?
+            } else { false };
+            
+            let dest_funded = if let Some(ref escrow) = swap.dest_escrow {
+                if let Ok(canister_id) = Principal::from_text(escrow) {
+                    check_icp_escrow_funding(canister_id).await?
+                } else { false }
+            } else { false };
+            
+            (source_funded, dest_funded)
+        }
+        SwapDirection::IcpToEvm => {
+            let source_funded = if let Some(canister_id) = swap.source_escrow_canister {
+                check_icp_escrow_funding(canister_id).await?
+            } else { false };
+            
+            let dest_funded = if let Some(ref escrow) = swap.dest_escrow {
+                evm_client.check_escrow_balance(escrow, swap.amount).await?
+            } else { false };
+            
+            (source_funded, dest_funded)
+        }
+    };
+    
+    let status = match (source_funded, dest_funded) {
+        (true, true) => EscrowFundingStatus::BothFunded,
+        (true, false) => EscrowFundingStatus::SourceFunded,
+        (false, true) => EscrowFundingStatus::DestFunded,
+        (false, false) => EscrowFundingStatus::NeitherFunded,
+    };
+    
+    // Update swap status if both funded
+    if matches!(status, EscrowFundingStatus::BothFunded) {
+        STATE.with(|state| {
+            if let Some(swap) = state.borrow_mut().active_swaps.get_mut(&swap_id) {
+                swap.status = SwapStatus::ReadyForExecution;
+            }
+        });
+    }
+    
+    Ok(status)
+}
+
+#[ic_cdk::update]
+pub async fn execute_atomic_swap(swap_id: String) -> ResolverResult<SwapExecutionResult> {
+    // Get swap and secret
+    let (swap, secret) = STATE.with(|state| {
+        let state_ref = state.borrow();
+        let swap = state_ref.active_swaps.get(&swap_id)
+            .ok_or_else(|| ResolverError::OrderNotFound("Swap not found".to_string()))?
+            .clone();
+        let secret = state_ref.secret_store.get(&swap_id)
+            .ok_or_else(|| ResolverError::ProcessingError("Secret not found".to_string()))?
+            .clone();
+        Ok((swap, secret))
+    })?;
+    
+    // Verify swap is ready
+    if swap.status != SwapStatus::ReadyForExecution {
+        return Err(ResolverError::ProcessingError("Swap not ready for execution".to_string()));
+    }
+    
+    let evm_client = get_evm_client();
+    
+    let (source_tx, dest_tx) = match swap.direction {
+        SwapDirection::EvmToIcp => {
+            let source_tx = if let Some(ref escrow) = swap.source_escrow {
+                evm_client.release_escrow_to_resolver(escrow, secret).await?
+            } else {
+                return Err(ResolverError::ProcessingError("Source escrow not found".to_string()));
+            };
+            
+            let dest_tx = if let Some(ref escrow) = swap.dest_escrow {
+                if let Ok(canister_id) = Principal::from_text(escrow) {
+                    release_icp_escrow(canister_id, secret).await?
+                } else {
+                    return Err(ResolverError::ProcessingError("Invalid ICP escrow principal".to_string()));
+                }
+            } else {
+                return Err(ResolverError::ProcessingError("Destination escrow not found".to_string()));
+            };
+            
+            (source_tx, dest_tx)
+        }
+        SwapDirection::IcpToEvm => {
+            let source_tx = if let Some(canister_id) = swap.source_escrow_canister {
+                release_icp_escrow(canister_id, secret).await?
+            } else {
+                return Err(ResolverError::ProcessingError("Source escrow canister not found".to_string()));
+            };
+            
+            let dest_tx = if let Some(ref escrow) = swap.dest_escrow {
+                evm_client.release_escrow_to_user(escrow, secret).await?
+            } else {
+                return Err(ResolverError::ProcessingError("Destination escrow not found".to_string()));
+            };
+            
+            (source_tx, dest_tx)
+        }
+    };
+    
+    // Update state
+    STATE.with(|state| {
+        let mut state_mut = state.borrow_mut();
+        if let Some(swap) = state_mut.active_swaps.get_mut(&swap_id) {
+            swap.status = SwapStatus::Completed;
+        }
+        state_mut.completed_swaps.insert(swap_id.clone(), ic_cdk::api::time());
+        state_mut.active_swaps.remove(&swap_id);
+        state_mut.secret_store.remove(&swap_id);
+    });
+    
+    Ok(SwapExecutionResult {
+        source_transaction: source_tx,
+        dest_transaction: dest_tx,
+        executed_at: ic_cdk::api::time(),
+    })
+}
+
+// ===== EMERGENCY FUNCTIONS =====
+
+#[ic_cdk::update]
+pub async fn refund_expired_swap(swap_id: String) -> ResolverResult<String> {
+    let swap = STATE.with(|state| {
+        state.borrow().active_swaps.get(&swap_id).cloned()
+    }).ok_or_else(|| ResolverError::OrderNotFound("Swap not found".to_string()))?;
+    
+    // Check if timelock has expired
+    let current_time = ic_cdk::api::time() / 1_000_000_000;
+    if current_time <= swap.timelock {
+        return Err(ResolverError::ProcessingError("Swap has not expired yet".to_string()));
+    }
+    
+    let evm_client = get_evm_client();
+    
+    // Refund both escrows to original depositors
+    let mut refund_txs = Vec::new();
+    
+    if let Some(ref escrow) = swap.source_escrow {
+        let tx = evm_client.refund_expired_escrow(escrow).await?;
+        refund_txs.push(tx);
+    }
+    
+    if let Some(ref escrow) = swap.dest_escrow {
+        let tx = evm_client.refund_expired_escrow(escrow).await?;
+        refund_txs.push(tx);
+    }
+    
+    // Clean up state
+    STATE.with(|state| {
+        let mut state_mut = state.borrow_mut();
+        state_mut.active_swaps.remove(&swap_id);
+        state_mut.secret_store.remove(&swap_id);
+    });
+    
+    Ok(format!("Refunded: {:?}", refund_txs))
+}
+
+// ===== QUERY FUNCTIONS =====
+
+#[ic_cdk::query]
+pub fn get_active_swaps() -> Vec<CrossChainSwap> {
+    STATE.with(|state| {
+        state.borrow().active_swaps.values().cloned().collect()
     })
 }
 
@@ -198,107 +430,215 @@ pub fn get_completed_swaps() -> Vec<(String, u64)> {
     })
 }
 
-fn convert_oneinch_order(oneinch_order: OneInchOrder) -> ResolverResult<CrossChainOrder> {
-    let secret = ResolverUtils::generate_htlc_secret();
-    let hash_lock = ResolverUtils::generate_secret_hash(&secret);
-    
-    Ok(CrossChainOrder {
-        maker: oneinch_order.maker,
-        maker_asset: oneinch_order.maker_asset,
-        making_amount: oneinch_order.making_amount.parse()
-            .map_err(|_| ResolverError::ProcessingError("Invalid making amount".to_string()))?,
-        taker_asset: oneinch_order.taker_asset,
-        taking_amount: oneinch_order.taking_amount.parse()
-            .map_err(|_| ResolverError::ProcessingError("Invalid taking amount".to_string()))?,
-        src_chain_id: 1, // Ethereum
-        dst_chain_id: 0, // ICP (placeholder)
-        hash_lock,
-        time_lock: oneinch_order.creation_timestamp + oneinch_order.auction_duration,
-        order_hash: oneinch_order.hash,
-        auction_details: AuctionDetails {
-            duration: oneinch_order.auction_duration,
-            start_time: oneinch_order.auction_start_date,
-            initial_rate_bump: oneinch_order.initial_rate_bump,
-            gas_price: 0, // Will be fetched separately
-        },
-    })
-}
-
-async fn calculate_profitability(order: &CrossChainOrder) -> ResolverResult<ProfitabilityAnalysis> {
-    // Get current gas price
-    let evm_canister = STATE.with(|state| state.borrow().resolver_config.evm_rpc_canister);
-    let evm_client = EvmRpcClient::new(evm_canister);
-    let gas_price = evm_client.get_gas_price().await?;
-    
-    // Estimate gas costs (simplified)
-    let estimated_gas = 200_000u128; // Gas for HTLC creation + settlement
-    let gas_cost = gas_price * estimated_gas;
-    
-    // Calculate profitability
-    let score = ResolverUtils::calculate_profitability_score(
-        order.making_amount,
-        order.taking_amount,
-        gas_cost,
-        2000.0, // ETH price placeholder
-    );
-    
-    let gross_profit = order.taking_amount.saturating_sub(order.making_amount);
-    let net_profit = gross_profit.saturating_sub(gas_cost);
-    
-    Ok(ProfitabilityAnalysis {
-        score,
-        estimated_profit: net_profit,
-        gas_costs: gas_cost,
-        price_impact: 0.1, // Placeholder
-        competition_level: 3, // Placeholder
-    })
-}
-
-async fn submit_bid_via_evm(evm_client: &EvmRpcClient, order: &CrossChainOrder) -> ResolverResult<bool> {
-    // TODO: Implement actual bidding via smart contract interaction
-    // This would involve:
-    // 1. Preparing transaction data for 1inch Settlement contract
-    // 2. Signing transaction with threshold ECDSA
-    // 3. Submitting transaction via EVM RPC
-    
-    ic_cdk::println!("Would submit bid for order {}", order.order_hash);
-    Ok(false) // Placeholder
-}
-
-fn create_icp_htlc(
-    amount: u128,
-    recipient: Principal,
-    hash_lock: [u8; 32],
-    time_lock: u64,
-) -> ResolverResult<String> {
-    // TODO: Implement actual ICP HTLC creation
-    // This would involve:
-    // 1. Transferring ICP tokens to escrow
-    // 2. Setting up hash/time locks
-    // 3. Storing escrow details
-    
-    let contract_id = format!("htlc_{}_{}", ic_cdk::api::time(), hash_lock[0]);
-    
-    // Store escrow info
+#[ic_cdk::update]
+pub async fn update_config(config: OrchestratorConfig) -> ResolverResult<()> {
     STATE.with(|state| {
-        let escrow = HTLCEscrow {
-            contract_id: contract_id.clone(),
-            hash_lock,
-            time_lock,
-            amount,
-            sender: ic_cdk::caller(),
-            recipient,
-            status: EscrowStatus::Locked,
-            secret: None,
-        };
-        state.borrow_mut().active_escrows.insert(contract_id.clone(), escrow);
+        state.borrow_mut().config = config;
+    });
+    Ok(())
+}
+
+#[ic_cdk::query]
+pub fn get_config() -> OrchestratorConfig {
+    STATE.with(|state| state.borrow().config.clone())
+}
+
+// ===== THRESHOLD ECDSA FUNCTIONS =====
+
+/// Get canister's Ethereum address (derived from threshold ECDSA)
+#[ic_cdk::update]
+pub async fn get_canister_eth_address() -> ResolverResult<String> {
+    let config = STATE.with(|state| state.borrow().config.clone());
+    
+    let public_key_result = ic_cdk::call(
+        Principal::management_canister(),
+        "ecdsa_public_key",
+        (EcdsaPublicKeyArgs {
+            canister_id: None,
+            derivation_path: vec![],
+            key_id: EcdsaKeyId {
+                curve: EcdsaCurve::Secp256k1,
+                name: config.ecdsa_key_name,
+            },
+        },)
+    ).await;
+    
+    match public_key_result {
+        Ok((response,)) => {
+            let public_key_response: EcdsaPublicKeyResponse = response;
+            // Convert public key to Ethereum address
+            let eth_address = public_key_to_eth_address(&public_key_response.public_key);
+            Ok(eth_address)
+        }
+        Err((code, msg)) => Err(ResolverError::ExternalCallError(format!(
+            "Failed to get public key: {:?} - {}", code, msg
+        )))
+    }
+}
+
+/// Convert public key to Ethereum address
+fn public_key_to_eth_address(public_key: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    
+    // Remove the first byte (0x04) from uncompressed public key
+    let public_key_bytes = &public_key[1..];
+    
+    // Hash with SHA256 (simplified - would use Keccak256 in real implementation)
+    let hash = Sha256::digest(public_key_bytes);
+    
+    // Take last 20 bytes as Ethereum address
+    let address_bytes = &hash[12..];
+    format!("0x{}", hex::encode(address_bytes))
+}
+
+// ===== ICP ESCROW FACTORY =====
+
+/// Create a new ICP escrow canister for a swap
+async fn create_icp_escrow_for_swap(
+    swap_id: &str,
+    secret_hash: [u8; 32],
+    timelock: u64,
+    amount: u128,
+    token_ledger: Principal,
+    depositor: Principal,
+    recipient: Principal,
+) -> ResolverResult<Principal> {
+    let params = IcpEscrowParams {
+        secret_hash,
+        timelock,
+        amount,
+        token_ledger,
+        depositor,
+        recipient,
+        resolver: ic_cdk::id(), // This resolver canister controls the escrow
+    };
+    
+    let escrow_canister = deploy_icp_escrow(params).await?;
+    
+    // Track the created escrow
+    STATE.with(|state| {
+        let mut state_mut = state.borrow_mut();
+        state_mut.created_icp_escrows.insert(swap_id.to_string(), escrow_canister);
+        state_mut.escrow_count += 1;
     });
     
-    Ok(contract_id)
+    Ok(escrow_canister)
 }
 
-fn get_min_profit_threshold() -> u128 {
-    STATE.with(|state| state.borrow().resolver_config.min_profit_threshold)
+/// Get created ICP escrow for a swap
+#[ic_cdk::query]
+pub fn get_icp_escrow_for_swap(swap_id: String) -> Option<Principal> {
+    STATE.with(|state| {
+        state.borrow().created_icp_escrows.get(&swap_id).copied()
+    })
+}
+
+/// Get total number of created escrow canisters
+#[ic_cdk::query] 
+pub fn get_escrow_count() -> u64 {
+    STATE.with(|state| state.borrow().escrow_count)
+}
+
+/// List all created ICP escrows
+#[ic_cdk::query]
+pub fn list_created_icp_escrows() -> Vec<(String, Principal)> {
+    STATE.with(|state| {
+        state.borrow().created_icp_escrows.iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect()
+    })
+}
+
+// ===== HELPER FUNCTIONS =====
+
+/// Fund destination escrow via wallet canister
+async fn fund_dest_escrow_via_wallet(
+    escrow_address: &str,
+    token_address: &str,
+    amount: u128,
+) -> ResolverResult<()> {
+    let wallet_canister = STATE.with(|state| state.borrow().wallet_canister)
+        .ok_or_else(|| ResolverError::ProcessingError("Wallet canister not set".to_string()))?;
+    
+    // Call wallet to send tokens to escrow
+    let result: Result<(Result<String, String>,), _> = if token_address == "0x0000000000000000000000000000000000000000" {
+        // Send ETH
+        ic_cdk::call(wallet_canister, "send_eth", (escrow_address.to_string(), amount)).await
+    } else {
+        // Send ERC20 token
+        ic_cdk::call(
+            wallet_canister, 
+            "send_erc20", 
+            (token_address.to_string(), escrow_address.to_string(), amount)
+        ).await
+    };
+    
+    match result {
+        Ok((Ok(tx_hash),)) => {
+            ic_cdk::println!("Funded escrow {} with tx: {}", escrow_address, tx_hash);
+            Ok(())
+        }
+        Ok((Err(error),)) => Err(ResolverError::ExternalCallError(format!("Wallet error: {}", error))),
+        Err((code, msg)) => Err(ResolverError::ExternalCallError(format!("Call failed: {:?} - {}", code, msg))),
+    }
+}
+
+async fn fund_icp_dest_escrow(
+    escrow_canister: &Principal,
+    token_ledger: &Principal,
+    amount: u128,
+) -> ResolverResult<()> {
+    use ic_ledger_types::{TransferArgs, Tokens, AccountIdentifier, Subaccount, Memo};
+    
+    let transfer_args = TransferArgs {
+        memo: Memo(3),
+        amount: Tokens::from_e8s(amount as u64),
+        fee: Tokens::from_e8s(10000),
+        from_subaccount: None,
+        to: AccountIdentifier::new(escrow_canister, &Subaccount([0; 32])),
+        created_at_time: None,
+    };
+    
+    let transfer_result: Result<(ic_ledger_types::TransferResult,), _> = ic_cdk::call(
+        *token_ledger,
+        "transfer",
+        (transfer_args,)
+    ).await;
+    
+    match transfer_result {
+        Ok((ic_ledger_types::TransferResult::Ok(_),)) => Ok(()),
+        Ok((ic_ledger_types::TransferResult::Err(err),)) => {
+            Err(ResolverError::ExternalCallError(format!("Transfer failed: {:?}", err)))
+        }
+        Err((code, msg)) => {
+            Err(ResolverError::ExternalCallError(format!("Call failed: {:?} - {}", code, msg)))
+        }
+    }
+}
+
+fn get_evm_client() -> EvmRpcClient {
+    let canister_id = STATE.with(|state| state.borrow().config.evm_rpc_canister);
+    EvmRpcClient::new(canister_id)
+}
+
+/// Configure for Sepolia testnet
+#[ic_cdk::update]
+pub async fn configure_for_sepolia_testnet(wrapper_contract: String) -> ResolverResult<()> {
+    let mut config = STATE.with(|state| state.borrow().config.clone());
+    
+    config.evm_network = EvmNetwork::EthSepolia;
+    config.wrapper_contract_address = wrapper_contract;
+    config.ecdsa_key_name = "test_key_1".to_string(); // Use test key for Sepolia
+    config.supported_tokens = vec![
+        "0x0000000000000000000000000000000000000000".to_string(), // ETH
+        "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984".to_string(), // UNI (Sepolia)
+    ];
+    
+    STATE.with(|state| {
+        state.borrow_mut().config = config;
+    });
+    
+    Ok(())
 }
 
 // Export candid interface

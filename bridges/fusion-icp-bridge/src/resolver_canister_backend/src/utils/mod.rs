@@ -9,28 +9,10 @@ use crate::types::{ResolverError, ResolverResult};
 pub struct ResolverUtils;
 
 impl ResolverUtils {
-    /// Derive ICP Principal from Ethereum address using deterministic hashing
-    pub fn derive_icp_principal(eth_address: &str) -> ResolverResult<Principal> {
-        // Validate Ethereum address format
-        if !eth_address.starts_with("0x") || eth_address.len() != 42 {
-            return Err(ResolverError::InvalidInput(
-                "Invalid Ethereum address format".to_string()
-            ));
-        }
-        
-        // Normalize address to lowercase
-        let normalized_address = eth_address.to_lowercase();
-        
-        // Deterministic Principal generation from Ethereum address
-        let mut hasher = Sha256::new();
-        hasher.update(b"fusion_icp_bridge_v1:");
-        hasher.update(normalized_address.as_bytes());
-        let hash = hasher.finalize();
-        
-        // Convert hash to Principal (use first 29 bytes)
-        let principal_bytes = &hash[..29];
-        Principal::try_from_slice(principal_bytes)
-            .map_err(|e| ResolverError::ProcessingError(format!("Failed to create Principal: {}", e)))
+    /// Parse recipient from 1inch order (frontend already derived this)
+    pub fn parse_icp_recipient(recipient_str: &str) -> ResolverResult<Principal> {
+        Principal::from_text(recipient_str)
+            .map_err(|e| ResolverError::InvalidInput(format!("Invalid recipient principal: {}", e)))
     }
 
     /// Generate deterministic hash for HTLC secret
@@ -161,14 +143,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_derive_icp_principal() {
-        let eth_address = "0x742d35Cc67d3E0E7B4bE88c8FA9b7F87f8a9E947";
-        let result = ResolverUtils::derive_icp_principal(eth_address);
+    fn test_parse_icp_recipient() {
+        let principal_str = "rdmx6-jaaaa-aaaaa-aaadq-cai";
+        let result = ResolverUtils::parse_icp_recipient(principal_str);
         assert!(result.is_ok());
         
-        // Test deterministic behavior
-        let result2 = ResolverUtils::derive_icp_principal(eth_address);
-        assert_eq!(result.unwrap(), result2.unwrap());
+        // Test invalid principal
+        let invalid_result = ResolverUtils::parse_icp_recipient("invalid");
+        assert!(invalid_result.is_err());
     }
 
     #[test]
