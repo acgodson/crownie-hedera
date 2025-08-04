@@ -1,6 +1,6 @@
 {
   "name": "@crownie-bridge/fusion-icp-bridge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Fusion ICP Bridge Service",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
