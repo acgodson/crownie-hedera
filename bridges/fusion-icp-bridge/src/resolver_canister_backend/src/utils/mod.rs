@@ -21,6 +21,11 @@ impl ResolverUtils {
         hash.into()
     }
 
+    /// Hash secret for HTLC (alias for compatibility)
+    pub fn hash_secret(secret: &[u8; 32]) -> [u8; 32] {
+        Self::generate_secret_hash(secret)
+    }
+
     /// Generate random secret for HTLC
     pub fn generate_htlc_secret() -> [u8; 32] {
         let timestamp = ic_cdk::api::time();
@@ -144,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_parse_icp_recipient() {
-        let principal_str = "rdmx6-jaaaa-aaaaa-aaadq-cai";
+        let principal_str = "be2us-64aaa-aaaaa-qaabq-cai";
         let result = ResolverUtils::parse_icp_recipient(principal_str);
         assert!(result.is_ok());
         

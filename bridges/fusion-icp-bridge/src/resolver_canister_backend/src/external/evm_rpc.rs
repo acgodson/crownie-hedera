@@ -237,7 +237,7 @@ impl EvmRpcClient {
     }
 
     /// Build 1inch Immutables struct  
-    async fn build_immutables(
+    pub async fn build_immutables(
         &self,
         order_hash: &[u8; 32],
         hash_lock: [u8; 32],
@@ -431,7 +431,7 @@ impl EvmRpcClient {
     }
 
     /// Get resolver's Ethereum address from threshold ECDSA
-    async fn get_resolver_eth_address(&self) -> ResolverResult<String> {
+    pub async fn get_resolver_eth_address(&self) -> ResolverResult<String> {
         let config = STATE.with(|state| state.borrow().config.clone());
         
         let public_key_result = ic_cdk::call(
@@ -527,7 +527,7 @@ impl EvmRpcClient {
     }
 
     /// Generate order hash for 1inch order
-    async fn generate_order_hash(&self, user_address: &str, token_address: &str, amount: u128, secret_hash: [u8; 32]) -> ResolverResult<[u8; 32]> {
+    pub async fn generate_order_hash(&self, user_address: &str, token_address: &str, amount: u128, secret_hash: [u8; 32]) -> ResolverResult<[u8; 32]> {
         use sha3::{Digest, Keccak256};
         
         let mut hasher = Keccak256::new();
