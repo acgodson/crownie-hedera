@@ -7,6 +7,7 @@ export default {
         crownie: {
           primary: "#F3BA50",
           secondary: "#E98A48",
+          dark: "#191919",
         },
         primary: {
           50: "#eff6ff",

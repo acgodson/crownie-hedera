@@ -15,4 +15,13 @@ body {
   background-color: #1a1a1a;
   color: white;
   font-family: Inter, system-ui, sans-serif;
+  /* Disable scroll bounce */
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+html {
+  /* Disable scroll bounce for the entire page */
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
