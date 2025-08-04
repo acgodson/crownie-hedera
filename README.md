@@ -1,60 +1,69 @@
-# Crownie - Fusion+ EVM to ICP Cross-Chain Bridge
+# Crownie - Social Etherlink Assets Bridge
 
-A decentralized atomic swap bridge enabling seamless token transfers between Ethereum Virtual Machine (EVM) chains and the Internet Computer Protocol (ICP) using 1inch Fusion+ standards and Hash Time-Locked Contracts (HTLCs).
+A decentralized atomic swap bridge enabling seamless token transfers on Etherlink using 1inch Fusion+ intent-based model and Hash Time-Locked Contracts (HTLCs). Escrow Factory and Resolver Contracts are hosted on Etherlink, utilizing atomic swaps between source and destination escrows with cryptographic guarantees.
 
 ## 🎯 Overview
 
-Crownie bridges the gap between EVM chains and ICP by implementing a trustless, atomic swap mechanism. Users can swap ETH for WICP (or other tokens) across chains without relying on centralized exchanges or custodial bridges.
+Crownie implements a trustless atomic swap mechanism on Etherlink, enabling seamless token swaps using the 1inch Fusion+ intent-based model. Assets are locked with a hashlock and expiration time in HTLC escrows, ensuring atomic swaps between source and destination contracts.
 
 **Key Features:**
-- ⚡ **Atomic Swaps**: All-or-nothing guarantees using HTLCs
+- ⚡ **Atomic Swaps**: All-or-nothing guarantees using HTLCs on Etherlink
 - 🔒 **Trustless**: No custodial risk or centralized control  
-- 🌉 **Cross-Chain**: Support for Ethereum, Polygon, BSC ↔ ICP
-- 🎮 **1inch Fusion+ Compatible**: Leverages proven DEX infrastructure
-- 🤝 **Social Coordination**: Novel relayer mechanism via video meeting consensus
+- 🌐 **Same-Chain Operations**: Efficient same-chain swaps on Etherlink
+- 🎮 **1inch Fusion+ Compatible**: Intent-based architecture with proven infrastructure
+- 🤝 **Social Coordination**: Crownie Extension serves as offchain live-meeting relayer
+- 🔍 **Live Monitoring**: Extension monitors and reveals secrets for swap fulfillment
 
 ## 🏗️ Architecture
 
 ### Core Components
 
-1. **EVM Resolver Contract**: Deploys and manages escrows on EVM chains
-2. **ICP Resolver Canister**: Orchestrates cross-chain swaps and manages ICP escrows  
-3. **Wallet Canister**: Holds resolver's token inventory for funding escrows
-4. **Relayer System**: Crownie's unique social consensus mechanism
-5. **HTLC Escrows**: Lock funds with cryptographic guarantees on both chains
+1. **Escrow Factory Contract**: Deploys and manages HTLC escrows on Etherlink
+2. **Resolver Contract**: Orchestrates atomic swaps and manages escrow operations
+3. **HTLC Escrows**: Lock assets with hashlock and expiration time guarantees
+4. **Crownie Extension**: Offchain live-meeting relayer for secret revelation
+5. **Intent-Based Architecture**: Follows 1inch Fusion+ model for efficient swaps
 
 ```
-┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
-│   EVM Chain         │    │   ICP Network       │    │   Crownie Relay     │
-│  ┌───────────────┐  │    │  ┌───────────────┐  │    │  ┌───────────────┐  │
-│  │ 1inch Fusion+ │  │    │  │   Resolver    │  │    │  │ Video Meeting │  │
-│  │   Resolver    │  │◄───┼──┤   Canister    │  │◄───┼──┤   Consensus   │  │
-│  └───────────────┘  │    │  └───────────────┘  │    │  └───────────────┘  │
-│  ┌───────────────┐  │    │  ┌───────────────┐  │    │  ┌───────────────┐  │
-│  │ ETH Escrow    │  │    │  │ WICP Escrow   │  │    │  │ Secret Shares │  │
-│  │ Contract      │  │    │  │ Canister      │  │    │  │ Management    │  │
-│  └───────────────┘  │    │  └───────────────┘  │    │  └───────────────┘  │
-└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
+┌─────────────────────────┐    ┌─────────────────────────┐
+│     Etherlink Chain     │    │    Crownie Extension    │
+│  ┌─────────────────┐    │    │  ┌─────────────────┐    │
+│  │ Escrow Factory  │    │    │  │ Live Meeting    │    │
+│  │   Contract      │    │◄───┼──┤   Relayer       │    │
+│  └─────────────────┘    │    │  └─────────────────┘    │
+│  ┌─────────────────┐    │    │  ┌─────────────────┐    │
+│  │   Resolver      │    │    │  │ Secret Monitor  │    │
+│  │   Contract      │    │    │  │ & Revelation    │    │
+│  └─────────────────┘    │    │  └─────────────────┘    │
+│  ┌─────────────────┐    │    │                         │
+│  │ Source Escrow   │    │    │                         │
+│  │   (HTLC)        │    │    │                         │
+│  └─────────────────┘    │    │                         │
+│  ┌─────────────────┐    │    │                         │
+│  │ Destination     │    │    │                         │
+│  │ Escrow (HTLC)   │    │    │                         │
+│  └─────────────────┘    │    │                         │
+└─────────────────────────┘    └─────────────────────────┘
 ```
 
-## 🔄 Cross-Chain Swap Flow
+## 🔄 Same-Chain Atomic Swap Flow
 
-Let's walk through Bob's journey swapping **1 ETH → 2000 WICP**:
+Let's walk through Bob's journey swapping **1 ETH → 2000 USDC** on Etherlink:
 
 ### 1. **Bob Initiates Swap**
 
-Bob wants to swap ETH for WICP on ICP.
+Bob wants to swap ETH for USDC on Etherlink using the intent-based model.
 
 **What happens:**
-- Bob creates an order on 1inch Fusion+ 
-- EVM resolver deploys an **ETH escrow contract** 
-- Bob locks **1 ETH** in the escrow with:
+- Bob creates an intent on the Fusion+ system
+- Escrow Factory deploys a **source ETH escrow contract** on Etherlink
+- Bob locks **1 ETH** in the source escrow with:
   - `secret_hash` = `keccak256(random_secret)`
   - `timelock` = 2 hours expiry
   - `recipient` = resolver address
 
 ```solidity
-// EVM Escrow State
+// Source Escrow State (Etherlink)
 locked_amount: 1 ETH
 secret_hash: 0xabc123...
 timelock: block.timestamp + 7200
@@ -63,85 +72,85 @@ recipient: resolver_address
 
 ---
 
-### 2. **ICP Resolver Deploys Destination Escrow**
+### 2. **Resolver Deploys Destination Escrow**
 
-The **ICP Resolver Canister** detects the EVM escrow creation (triggered by external relay).
+The **Resolver Contract** on Etherlink detects the source escrow creation and responds to the intent.
 
 **What it does:**
-- Creates a matching **WICP escrow canister** on ICP
-- Funds it with **2000 WICP** from its wallet canister
+- Creates a matching **USDC destination escrow contract** on Etherlink
+- Funds it with **2000 USDC** from its token inventory
 - Uses **same cryptographic parameters**:
-  - `secret_hash` = same as EVM escrow  
+  - `secret_hash` = same as source escrow  
   - `timelock` = same expiry
-  - `recipient` = Bob's ICP principal (derived from his ETH address)
+  - `recipient` = Bob's address
 
-```rust
-// ICP Escrow State  
-locked_amount: 2000 WICP
-secret_hash: 0xabc123... // Same as EVM!
-timelock: ic_time + 7200
-recipient: Bob's_ICP_Principal
+```solidity
+// Destination Escrow State (Etherlink)
+locked_amount: 2000 USDC
+secret_hash: 0xabc123... // Same as source!
+timelock: block.timestamp + 7200
+recipient: Bob's_Address
 ```
 
-✅ **Both escrows are now locked** — atomic swap is ready!
+✅ **Both escrows are now locked on Etherlink** — atomic swap is ready!
 
 ---
 
-### 3. **Crownie Relayer Verifies Both Escrows**
+### 3. **Crownie Extension Verifies Both Escrows**
 
-Here's where Crownie's **social consensus** shines:
+Here's where Crownie's **offchain live-meeting relayer** shines:
 
-**The Crownie Live Extension:**
-- Participants join a video meeting about this swap
-- Extension monitors **both chains simultaneously**
+**The Crownie Extension:**
+- Participants join a video meeting about this swap intent
+- Extension monitors **both escrows on Etherlink simultaneously**
 - Verifies:
-  - ✅ ETH is locked on Ethereum
-  - ✅ WICP is locked on ICP  
-  - ✅ Same secret_hash on both chains
+  - ✅ ETH is locked in source escrow
+  - ✅ USDC is locked in destination escrow  
+  - ✅ Same secret_hash on both escrows
   - ✅ Reasonable timelock (prevents rushed decisions)
 
-**Consensus Mechanism:**
-- Meeting participants hold **threshold secret shares**
-- Once verification complete, they collectively vote: **"Safe to proceed"**
-- Extension tells Bob: *"Both escrows verified. You can safely reveal your secret."*
+**Live-Meeting Consensus:**
+- Meeting participants collectively verify the swap conditions
+- Once verification complete, they vote: **"Safe to proceed"**
+- Extension tells Bob: *"Both escrows verified on Etherlink. You can safely reveal your secret."*
 
 ---
 
-### 4. **Bob Reveals Secret on ICP**
+### 4. **Bob Reveals Secret on Destination Escrow**
 
-Bob trusts the social verification and reveals his secret on the **ICP escrow**.
+Bob trusts the social verification and reveals his secret on the **destination USDC escrow**.
 
 **Transaction:**
-```rust
-// Bob calls ICP escrow canister
-escrow_canister.claim(secret: [u8; 32])
+```solidity
+// Bob calls destination escrow contract
+destinationEscrow.claim(secret)
 
-// Canister validates:
-if keccak256(secret) == stored_secret_hash {
-    // Transfer 2000 WICP to Bob's ICP wallet
-    transfer_wicp(recipient: Bob's_ICP_Principal, amount: 2000)
+// Contract validates:
+if (keccak256(secret) == stored_secret_hash) {
+    // Transfer 2000 USDC to Bob's address
+    USDC.transfer(recipient, 2000);
     
     // Emit secret in transaction logs for relayer
-    ic_cdk::print!("Secret revealed: {}", hex::encode(secret));
+    emit SecretRevealed(secret);
 }
 ```
 
-🎉 **Bob now has 2000 WICP on ICP!**
+🎉 **Bob now has 2000 USDC on Etherlink!**
 
 ---
 
-### 5. **Relayer Unlocks ETH for Resolver**
+### 5. **Extension Unlocks ETH for Resolver**
 
-The Crownie relayer (or any observer) sees the secret from ICP transaction logs.
+The Crownie Extension (or any observer) sees the secret from the destination escrow transaction logs.
 
 **What happens:**
-- Relayer extracts `secret` from ICP transaction
-- Calls EVM escrow: `claim(secret)`  
-- EVM escrow validates `keccak256(secret) == secret_hash`
-- **1 ETH** transfers to resolver's wallet
+- Extension extracts `secret` from Etherlink transaction logs
+- Calls source escrow: `claim(secret)`  
+- Source escrow validates `keccak256(secret) == secret_hash`
+- **1 ETH** transfers to resolver's address
 
 ```solidity
-// EVM escrow validates and releases
+// Source escrow validates and releases
 function claim(bytes32 secret) external {
     require(keccak256(secret) == secret_hash, "Invalid secret");
     require(block.timestamp < timelock, "Expired");
@@ -150,23 +159,23 @@ function claim(bytes32 secret) external {
 }
 ```
 
-✅ **Atomic swap complete!** Both parties got their tokens.
+✅ **Atomic swap complete on Etherlink!** Both parties got their tokens.
 
 ---
 
-### 6. **Optional: Bob Bridges WICP to EVM**
+### 6. **Swap Complete - Same Chain Benefits**
 
-If Bob wants his WICP back on Ethereum as an ERC-20:
+Since both assets are on Etherlink, Bob enjoys seamless same-chain benefits:
 
-**Bridge Process:**
-- Bob burns **2000 WICP** on ICP via Helix/ckETH bridge
-- ICP bridge relayer mints **2000 WICP** ERC-20 tokens on Ethereum
-- Bob receives ERC-20 WICP in his original ETH wallet
+**Immediate Access:**
+- Bob can immediately use his **2000 USDC** in Etherlink DeFi
+- No cross-chain bridging delays or additional fees
+- Direct composability with other Etherlink protocols
 
-**Bob's Final Options:**
-1. **Keep WICP on ICP** - Use in ICP DeFi ecosystem
-2. **Bridge to EVM** - Get ERC-20 WICP on Ethereum
-3. **Use CEX** - Trade WICP for other tokens
+**Bob's Options:**
+1. **Use in Etherlink DeFi** - Immediate access to lending, yield farming
+2. **Further Trading** - Swap USDC for other Etherlink tokens  
+3. **Bridge if Needed** - Optional bridging to other chains later
 
 ---
 
@@ -181,13 +190,13 @@ If Bob wants his WICP back on Ethereum as an ERC-20:
 
 ### Attack Prevention
 
-| Attack Vector | Protection |
-|---------------|------------|
-| **Front-running** | Secret is only revealed after both escrows funded |
-| **Griefing** | Timelock allows refunds if counterparty disappears |
-| **Double-spend** | Blockchain consensus prevents double-spending |
-| **Rug pull** | No custodial control - funds locked in smart contracts |
-| **Relayer failure** | Anyone can observe secret and complete swap |
+| Attack Vector         | Protection                                                     |
+| --------------------- | -------------------------------------------------------------- |
+| **Front-running**     | Secret is only revealed after both escrows funded on Etherlink |
+| **Griefing**          | Timelock allows refunds if counterparty disappears             |
+| **Double-spend**      | Etherlink consensus prevents double-spending                   |
+| **Rug pull**          | No custodial control - funds locked in HTLC contracts          |
+| **Extension failure** | Anyone can observe secret and complete swap on-chain           |
 
 ---
 
@@ -195,10 +204,10 @@ If Bob wants his WICP back on Ethereum as an ERC-20:
 
 ### Prerequisites
 
-- **dfx** (Internet Computer SDK)
-- **Rust** (for canister development)  
 - **Node.js** (for frontend/testing)
-- **1inch API Key** (for production)
+- **Hardhat/Foundry** (for Etherlink contract development)  
+- **Etherlink RPC** (for blockchain interaction)
+- **1inch API Key** (for Fusion+ integration)
 
 ### Quick Start
 
@@ -209,35 +218,38 @@ cd crownie-fusion-bridge
 npm install
 ```
 
-2. **Start Local ICP Replica**
+2. **Setup Etherlink Environment**
 ```bash
-dfx start --background --clean
+# Configure Etherlink RPC and network settings
+cp .env.example .env
+# Fill in Etherlink RPC URL and private keys
 ```
 
-3. **Deploy Canisters**
+3. **Deploy Contracts**
 ```bash
-dfx deploy
+# Deploy Escrow Factory and Resolver contracts to Etherlink
+npm run deploy:etherlink
 ```
 
 4. **Run Tests**
 ```bash
-# Rust unit tests
-cargo test --manifest-path src/resolver_canister_backend/Cargo.toml
+# Smart contract tests
+npm run test:contracts
 
 # Integration tests  
-npm test
+npm run test:integration
 ```
 
 5. **Test Manually**
 ```bash
-# Configure for Sepolia testnet
-dfx canister call resolver_canister_backend configure_for_sepolia_testnet
+# Test escrow creation on Etherlink
+npm run test:escrow
 
-# Get resolver's ETH address
-dfx canister call resolver_canister_backend get_resolver_eth_address
+# Monitor swap intents
+npm run monitor:swaps
 
-# Check active swaps
-dfx canister call resolver_canister_backend get_active_swaps
+# Test Crownie Extension integration
+npm run test:extension
 ```
 
 ---
@@ -246,48 +258,50 @@ dfx canister call resolver_canister_backend get_active_swaps
 
 ### Test Coverage
 
-**✅ 12 Rust Unit Tests**
-- Configuration management
-- Swap state tracking  
-- HTLC logic validation
-- Error handling
-- ECDSA key derivation
+**✅ Smart Contract Tests**
+- HTLC escrow logic validation
+- Escrow Factory deployment
+- Resolver contract functionality  
+- Secret revelation mechanics
+- Timelock and refund scenarios
 
 **✅ Integration Tests**  
-- Cross-chain swap simulation
-- Escrow funding verification
-- Secret revelation flow
-- Timeout/refund scenarios
+- Same-chain atomic swap simulation
+- Escrow funding verification on Etherlink
+- Crownie Extension interaction
+- Intent fulfillment flow
 
 **✅ Manual Testing**
 ```bash
-# Test configuration
-dfx canister call resolver_canister_backend get_config
+# Test contract deployment
+npm run test:deploy
 
-# Test ETH address derivation  
-dfx canister call resolver_canister_backend get_resolver_eth_address
+# Test escrow creation
+npm run test:create-escrow
 
-# Test swap initiation (requires valid principals)
-dfx canister call resolver_canister_backend initiate_evm_to_icp_swap \
-  '("0x742d35cc6435c7a0c9bb8cb2de6bb7eac81b9e8c", "be2us-64aaa-aaaaa-qaabq-cai", "0x0000000000000000000000000000000000000000", "be2us-64aaa-aaaaa-qaabq-cai", 1000000000000000000:nat, 3600:nat64)'
+# Test atomic swap flow
+npm run test:atomic-swap
+
+# Test Extension monitoring
+npm run test:extension-monitor
 ```
 
-### How to Test Your Fusion-ICP Bridge on Sepolia
+### How to Test Your Fusion Bridge on Etherlink
 
-**1. Get Required API Keys & Setup**
+**1. Get Required Setup**
 
 ```bash
 # 1. Get 1inch Developer Portal API Key
 # Visit: https://portal.1inch.dev/
 # Sign up and create an API key
 
-# 2. Get Sepolia Testnet ETH
-# Visit: https://faucets.chain.link/sepolia
-# Get testnet ETH for gas fees
+# 2. Get Etherlink Testnet Tokens
+# Visit Etherlink faucet for testnet ETH and tokens
+# Get testnet tokens for swap testing
 
 # 3. Setup environment
 cp .env.example .env
-# Fill in your actual values
+# Fill in Etherlink RPC URL and API keys
 ```
 
 **2. Install Dependencies & Run Tests**
@@ -297,85 +311,84 @@ cp .env.example .env
 pnpm install
 
 # Run the bridge tests
-cd bridges/fusion-icp-bridge
-npm run test:fusion
+npm run test:etherlink
 ```
 
 **3. What the Tests Do**
 
-✅ **FusionService Test:**
-- Tests quote generation on Sepolia testnet
-- Uses real Sepolia token addresses (USDC → ETH)
-- Validates pricing and gas estimation
+✅ **Escrow Factory Test:**
+- Tests escrow deployment on Etherlink
+- Validates HTLC parameters and funding
+- Tests hashlock and timelock mechanics
 
-✅ **Cross-Chain Order Test:**
-- Creates HTLC with hashlock/secret
-- Tests cross-chain order structure
-- Validates deadline and order ID generation
+✅ **Atomic Swap Test:**
+- Creates intent-based swap orders
+- Tests same-chain atomic swaps
+- Validates secret revelation flow
 
-✅ **ICP Service Test:**
-- Initializes ICP canister connection
-- Tests authentication flow
-- Validates service readiness
+✅ **Extension Test:**
+- Tests Crownie Extension monitoring
+- Validates live-meeting relayer functionality
+- Tests consensus mechanisms
 
 **4. Expected Output**
 
 ```
-🚀 Starting Fusion-ICP Bridge Tests
+🚀 Starting Etherlink Fusion Bridge Tests
 
-🔄 Testing Fusion Quote...
-✅ Quote successful: {
-  sellAmount: "1000000",
-  buyAmount: "0.0003456789",
-  price: "2890.45"
+🔄 Testing Escrow Factory...
+✅ Escrow deployed: {
+  sourceEscrow: "0x1a2b3c...",
+  destinationEscrow: "0x4d5e6f...",
+  hashlock: "0xabc123..."
 }
 
-🔄 Testing Cross-Chain Order Creation...
-✅ Cross-chain order created: {
-  orderId: "order_1704123456_abc123def",
-  hashlock: "0x1a2b3c...",
-  deadline: "2024-01-01T13:00:00.000Z"
+🔄 Testing Atomic Swap...
+✅ Swap completed: {
+  swapId: "swap_1704123456_xyz789",
+  status: "completed",
+  secretRevealed: true
 }
 
-🔄 Testing ICP Service...
-✅ ICP Service initialized. Authenticated: false
+🔄 Testing Extension...
+✅ Extension monitoring active. Relayer connected.
 
 🎉 All tests completed successfully!
 ```
 
-**5. Key Testnet Tokens (Sepolia)**
+**5. Key Testnet Tokens (Etherlink)**
 
-- USDC: `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
-- WETH: `0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14`
 - ETH: `0x0000000000000000000000000000000000000000`
+- USDC: `[Etherlink USDC Address]`
+- WETH: `[Etherlink WETH Address]`
 
 ---
 
 ## 📋 Roadmap
 
-### Phase 1: Core HTLC ✅
-- [x] ICP resolver canister
+### Phase 1: Core HTLC on Etherlink ✅
+- [x] Escrow Factory contract
 - [x] HTLC escrow logic
-- [x] ECDSA key derivation  
-- [x] Comprehensive testing
+- [x] Resolver contract architecture
+- [x] Atomic swap mechanics
 
-### Phase 2: EVM Integration 🚧
-- [ ] 1inch Fusion+ order monitoring
-- [ ] EVM escrow deployment
-- [ ] Cross-chain event detection
-- [ ] Wallet canister funding
+### Phase 2: Fusion+ Integration 🚧
+- [ ] 1inch Fusion+ intent monitoring
+- [ ] Same-chain swap optimization
+- [ ] Intent fulfillment automation
+- [ ] Advanced pricing mechanisms
 
-### Phase 3: Crownie Relayer 📋
-- [ ] Video meeting integration
-- [ ] Social consensus mechanism
-- [ ] Threshold secret sharing
-- [ ] Live verification extension
+### Phase 3: Crownie Extension 📋
+- [ ] Live-meeting relayer implementation
+- [ ] Video conference integration
+- [ ] Consensus mechanism for secret revelation
+- [ ] Real-time monitoring dashboard
 
-### Phase 4: Production 📋  
-- [ ] Mainnet deployment
-- [ ] Multi-chain support
-- [ ] Advanced fee models
-- [ ] Governance integration
+### Phase 4: Production & Scaling 📋  
+- [ ] Etherlink mainnet deployment
+- [ ] Multi-token support expansion
+- [ ] Advanced fee optimization
+- [ ] Governance and community features
 
 ---
 
