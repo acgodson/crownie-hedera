@@ -9,6 +9,7 @@ on:
       - "bridges/fusion-icp-bridge/src/**"
       - "bridges/fusion-icp-bridge/dfx.json"
       - "bridges/fusion-icp-bridge/Cargo.toml"
+  workflow_dispatch:
 
 permissions:
   contents: write
