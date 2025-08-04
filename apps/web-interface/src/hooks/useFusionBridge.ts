@@ -1,6 +1,20 @@
 import { useState, useCallback } from 'react';
-import { getFusionService, getICPService } from '@crownie-bridge/fusion-icp-bridge';
-import type { FusionQuoteParams, SwapQuote } from '@crownie-bridge/shared-types';
+
+interface FusionQuoteParams {
+  sellToken: string;
+  buyToken: string;
+  amount: string;
+  walletAddress: string;
+}
+
+interface SwapQuote {
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  buyAmount: string;
+  price: string;
+  estimatedGas: string;
+}
 
 export const useFusionBridge = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -12,10 +26,20 @@ export const useFusionBridge = () => {
     setError(null);
     
     try {
-      const fusionService = getFusionService(process.env.VITE_FUSION_API_KEY);
-      const result = await fusionService.getQuote(params);
-      setQuote(result);
-      return result;
+      // Placeholder implementation - replace with actual Fusion service integration
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const mockQuote: SwapQuote = {
+        sellToken: params.sellToken,
+        buyToken: params.buyToken,
+        sellAmount: params.amount,
+        buyAmount: (parseFloat(params.amount) * 0.95).toString(),
+        price: '0.95',
+        estimatedGas: '21000'
+      };
+      
+      setQuote(mockQuote);
+      return mockQuote;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to get quote';
       setError(message);
@@ -36,15 +60,20 @@ export const useFusionBridge = () => {
     setError(null);
     
     try {
-      const fusionService = getFusionService(process.env.VITE_FUSION_API_KEY);
-      const order = await fusionService.createCrossChainOrder(
+      // Placeholder implementation - replace with actual Fusion service integration
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const mockOrder = {
+        orderId: `order_${Date.now()}`,
         sellToken,
         buyToken,
         amount,
         walletAddress,
-        destinationChain
-      );
-      return order;
+        destinationChain,
+        status: 'pending'
+      };
+      
+      return mockOrder;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create order';
       setError(message);

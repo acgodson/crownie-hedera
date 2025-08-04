@@ -4,6 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
+        crownie: {
+          primary: "#F3BA50",
+          secondary: "#E98A48",
+        },
         primary: {
           50: "#eff6ff",
           100: "#dbeafe",

@@ -1,8 +1,0 @@
-type Result = variant { Ok : text; Err : text };
-
-service : {
-  get_eth_address : () -> (Result);
-  send_eth : (text, nat) -> (Result);
-  send_erc20 : (text, text, nat) -> (Result);
-  call_contract : (text, text) -> (Result);
-}
