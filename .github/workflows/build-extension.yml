@@ -1,0 +1,142 @@
+name: Build and Release Chrome Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/extension/package.json"
+      - "apps/extension/src/**"
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version-changed: ${{ steps.check.outputs.changed }}
+      new-version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if version changed
+        id: check
+        run: |
+          CURRENT_VERSION=$(jq -r '.version' apps/extension/package.json)
+          echo "Current version: $CURRENT_VERSION"
+
+          git checkout HEAD~1 -- apps/extension/package.json 2>/dev/null || true
+          PREVIOUS_VERSION=$(jq -r '.version' apps/extension/package.json 2>/dev/null || echo "0.0.0")
+          echo "Previous version: $PREVIOUS_VERSION"
+
+          git checkout HEAD -- apps/extension/package.json
+
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Debug check-version outputs
+        run: |
+          echo "version-changed=${{ steps.check.outputs.changed }}"
+          echo "new-version=${{ steps.check.outputs.version }}"
+
+  build-and-release:
+    needs: check-version
+    if: ${{ needs.check-version.outputs.version-changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "apps/extension/**/package-lock.json"
+
+      - name: Install dependencies
+        run: |
+          cd extension
+          npm install
+
+      - name: Build Chrome extension
+        run: |
+          cd apps
+          npm run build:extension
+
+      - name: Verify build output
+        run: |
+          if [ ! -f apps/extension/dist/manifest.json ]; then
+            echo "❌ manifest.json missing"
+            exit 1
+          fi
+          if [ ! -d apps/extension/dist/assets ]; then
+            echo "❌ assets directory missing"
+            exit 1
+          fi
+
+      - name: Package extension
+        run: |
+          cd apps/extension
+          npm run package
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.check-version.outputs.new-version }}
+          release_name: Crownie Extension v${{ needs.check-version.outputs.new-version }}
+          body: |
+            ## Crownie Chrome Extension v${{ needs.check-version.outputs.new-version }}
+
+            Features:
+            - AI-powered note generation
+            - Swap intent generation
+            - Escrow Relays
+
+            Built from commit: ${{ github.sha }}
+
+          draft: false
+          prerelease: false
+
+      - name: Upload extension zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: apps/extension/releases/crownie-extension-v${{ needs.check-version.outputs.new-version }}.zip
+          asset_name: crownie-extension-v${{ needs.check-version.outputs.new-version }}.zip
+          asset_content_type: application/zip
+
+      - name: Create extension source zip
+        run: |
+          cd apps/extension/dist
+          zip -r ../extension-source.zip .
+
+      - name: Upload zipped extension source
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: apps/extension/extension-source.zip
+          asset_name: extension-source.zip
+          asset_content_type: application/zip
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf apps/extension/dist
+          rm -f apps/extension/crownie.zip
+          rm -f apps/extension/extension-source.zip
+          rm -f INSTALLATION.md

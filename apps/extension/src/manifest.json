@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "Crownie",
+  "description": "AI-powered meeting notes that generate swap intents and monitor Etherlink escrows",
+  "version": "0.1.0",
+  "icons": {
+    "16": "assets/logo.png",
+    "32": "assets/logo.png", 
+    "48": "assets/logo.png",
+    "128": "assets/logo.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://zoom.us/*", 
+    "https://teams.microsoft.com/*",
+    "https://*.webex.com/*",
+    "https://*.discord.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://zoom.us/*",
+        "https://teams.microsoft.com/*", 
+        "https://*.webex.com/*",
+        "https://*.discord.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Crownie",
+    "default_icon": {
+      "16": "assets/logo.png",
+      "32": "assets/logo.png",
+      "48": "assets/logo.png", 
+      "128": "assets/logo.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["auth-callback.html", "assets/*"],
+      "matches": [
+        "https://meet.google.com/*",
+        "https://zoom.us/*",
+        "https://teams.microsoft.com/*",
+        "https://*.webex.com/*", 
+        "https://*.discord.com/*"
+      ]
+    }
+  ]
+}

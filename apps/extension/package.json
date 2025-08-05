@@ -1,0 +1,45 @@
+{
+  "name": "crownie-extension",
+  "version": "0.0.1",
+  "description": "Chrome extension for capturing and transcribing meetings into swap intents",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode development",
+    "dev:bridge": "vite --mode development --port 3000",
+    "build": "vite build --mode production",
+    "build:extension": "vite build --mode extension && vite build --config vite.content.config.ts",
+    "preview": "vite preview",
+    "package": "npm run build:extension && node scripts/package-extension.js",
+    "release": "npm run package && node scripts/create-release.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "meeting-notes",
+    "transcription",
+    "ai"
+  ],
+  "author": "godson",
+  "license": "MIT",
+  "dependencies": {
+    "lucide-react": "^0.469.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.1.0",
+    "viem": "^2.33.2",
+    "webextension-polyfill": "^0.12.0",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.281",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/webextension-polyfill": "^0.12.1",
+    "@vitejs/plugin-react": "^4.6.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "rollup-plugin-copy": "^3.5.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}
