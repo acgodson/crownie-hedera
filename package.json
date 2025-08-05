@@ -7,9 +7,7 @@
     "dev": "pnpm --filter main-interface dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
-    "deploy:icp": "pnpm --filter @crownie-bridge/fusion-icp-bridge deploy:canister",
-    "deploy:eth": "pnpm --filter @crownie-bridge/fusion-icp-bridge deploy:contracts"
+    "test": "pnpm -r test"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

@@ -1,4 +1,4 @@
 packages:
-  - 'packages/*'
-  - 'apps/*'
-  - 'bridges/*'
+  - "packages/*"
+  - "apps/*"
+  - "crownie-swap"
