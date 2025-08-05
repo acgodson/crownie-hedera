@@ -274,19 +274,15 @@ const PopupView: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6">
         {meetingDetected ? (
-          /* Meeting Detected - Recording UI */
           <div className="space-y-4 w-full">
-            {/* Status Circle */}
             <div className="flex justify-center">
               <div className="w-16 h-16 rounded-full border-2 border-crownie-primary bg-crownie-primary/10 flex items-center justify-center mb-4">
                 <Check className="w-6 h-6 text-crownie-primary" />
               </div>
             </div>
 
-            {/* Status Text */}
             <h2 className="text-lg font-medium text-center">Meeting Detected</h2>
 
-            {/* Platform Badge */}
             {platform && (
               <div className="flex justify-center">
                 <div className="flex items-center gap-2 px-3 py-1 bg-crownie-primary/20 border border-crownie-primary/30 rounded-full">
@@ -296,7 +292,7 @@ const PopupView: React.FC = () => {
               </div>
             )}
 
-            {/* Recording Button */}
+                                                                                                                                                                                              
             {!isRecording ? (
               <button
                 onClick={handleStartRecording}

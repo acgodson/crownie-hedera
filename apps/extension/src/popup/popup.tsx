@@ -29,7 +29,7 @@ const Popup: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
 
   useEffect(() => {
-    // Check authentication status
+
     checkAuthStatus()
     
     // Check if we're on a supported meeting platform
