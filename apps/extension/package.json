@@ -1,6 +1,6 @@
 {
   "name": "crownie-extension",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Chrome extension for capturing and transcribing meetings into swap intents",
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
   "author": "godson",
   "license": "MIT",
   "dependencies": {
+    "archiver": "^7.0.1",
     "lucide-react": "^0.469.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

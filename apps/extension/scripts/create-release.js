@@ -15,7 +15,6 @@ async function createRelease() {
       throw new Error('No packaged extension found. Run npm run package first.')
     }
     
-    // Create release notes
     const releaseNotes = `# Crownie Extension v${version}
 
 ## Features
