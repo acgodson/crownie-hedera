@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "auto",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "lib": ["ESNext"],
+    "target": "ES2023",
+    "removeComments": false,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["./tests/**/*", "./src/**/*"]
+}
