@@ -139,3 +139,5 @@ pnpm-lock.yaml
 .env.production.local
 
 pnpm-lock.yaml
+
+apps/extension/releases

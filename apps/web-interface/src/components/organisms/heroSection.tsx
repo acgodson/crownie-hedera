@@ -35,9 +35,14 @@ const HeroSection = () => (
 
             <div className="w-full backdrop-blur-md bg-black bg-opacity-5 border-t border-b border-white border-opacity-20 py-8">
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                    <button className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg hover:bg-crownie-secondary transition-colors">
+                    <a 
+                        href="https://github.com/acgodson/crownie-etherlink/releases/tag/v0.0.14" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg hover:bg-crownie-secondary transition-colors inline-block"
+                    >
                         Try Crownie
-                    </button>
+                    </a>
                     <button className="px-8 py-3 border border-crownie-primary text-white rounded-lg hover:bg-crownie-primary hover:bg-opacity-10 transition-colors flex items-center gap-2">
                         Watch Demo <span className="text-crownie-primary">▶</span>
                     </button>

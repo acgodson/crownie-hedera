@@ -20,6 +20,9 @@ importers:
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
+      ethers:
+        specifier: 6.13.2
+        version: 6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       lucide-react:
         specifier: ^0.469.0
         version: 0.469.0(react@19.1.1)
@@ -87,12 +90,24 @@ importers:
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
+      dotenv:
+        specifier: 16.4.5
+        version: 16.4.5
+      ethers:
+        specifier: 6.13.2
+        version: 6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      lucide-react:
+        specifier: ^0.469.0
+        version: 0.469.0(react@19.1.1)
       react:
         specifier: ^19.1.0
         version: 19.1.1
       react-dom:
         specifier: ^19.1.0
         version: 19.1.1(react@19.1.1)
+      react-router-dom:
+        specifier: ^7.1.0
+        version: 7.7.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       stream-browserify:
         specifier: ^3.0.0
         version: 3.0.0

@@ -8,7 +8,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         content: path.resolve(__dirname, "src/content/content.ts"),
-        "auth-injector": path.resolve(__dirname, "src/auth-injector.js"),
       },
       output: {
         entryFileNames: "[name].js",
@@ -17,6 +16,7 @@ export default defineConfig({
       },
     },
     target: "esnext",
+    minify: false,
   },
   define: {
     global: "globalThis",

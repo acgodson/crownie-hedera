@@ -1,69 +1,142 @@
-console.log('🔍 Bridge Listener: Content script loaded on', window.location.href);
+// Bridge listener for communication between web page and extension
+console.log("🔗 Bridge Listener: Starting...");
 
-// Listen for window messages from AuthCallback component
-window.addEventListener('message', (event) => {
-  if (event.data.type === 'IC_NOTETAKER_AUTH_RESULT' && event.data.source === 'ic-notetaker-auth-callback') {
-    console.log('🔍 Bridge Listener: Received auth result via postMessage:', event.data.data);
-    
-    // Forward to extension background script
-    chrome.runtime.sendMessage({
-      action: 'AUTH_BRIDGE_RESULT',
-      data: event.data.data
-    }).then(() => {
-      console.log('✅ Bridge Listener: Forwarded auth result to background script');
-    }).catch((error) => {
-      console.error('❌ Bridge Listener: Failed to forward auth result:', error);
-    });
-  }
-});
-
-// Listen for localStorage changes as backup communication method
-window.addEventListener('storage', (event) => {
-  if (event.key === 'ic_notetaker_auth_result' && event.newValue) {
-    try {
-      const authData = JSON.parse(event.newValue);
-      console.log('🔍 Bridge Listener: Received auth result via localStorage:', authData.data);
-      
-      // Forward to extension background script
-      chrome.runtime.sendMessage({
-        action: 'AUTH_BRIDGE_RESULT',
-        data: authData.data
-      }).then(() => {
-        console.log('✅ Bridge Listener: Forwarded localStorage auth result to background script');
-        
-        // Clean up localStorage
-        localStorage.removeItem('ic_notetaker_auth_result');
-      }).catch((error) => {
-        console.error('❌ Bridge Listener: Failed to forward localStorage auth result:', error);
-      });
-    } catch (error) {
-      console.error('❌ Bridge Listener: Failed to parse localStorage auth result:', error);
-    }
-  }
-});
-
-// Also check localStorage on page load for any existing auth results
-try {
-  const existingAuthResult = localStorage.getItem('ic_notetaker_auth_result');
-  if (existingAuthResult) {
-    const authData = JSON.parse(existingAuthResult);
-    console.log('🔍 Bridge Listener: Found existing auth result in localStorage:', authData.data);
-    
-    // Forward to extension background script
-    chrome.runtime.sendMessage({
-      action: 'AUTH_BRIDGE_RESULT',
-      data: authData.data
-    }).then(() => {
-      console.log('✅ Bridge Listener: Forwarded existing localStorage auth result to background script');
-      
-      // Clean up localStorage
-      localStorage.removeItem('ic_notetaker_auth_result');
-    }).catch((error) => {
-      console.error('❌ Bridge Listener: Failed to forward existing localStorage auth result:', error);
-    });
-  }
-} catch (error) {
-  console.error('❌ Bridge Listener: Failed to check existing localStorage auth result:', error);
+interface OrderCreatedMessage {
+  type: "ORDER_CREATED";
+  orderId: string;
+  meetingId: string;
+  data?: any;
 }
 
-console.log('✅ Bridge Listener: Content script initialized with all communication methods');
+interface OrderUpdatedMessage {
+  type: "ORDER_UPDATED";
+  orderId: string;
+  updates: any;
+}
+
+type BridgeMessage = OrderCreatedMessage | OrderUpdatedMessage;
+
+class BridgeListener {
+  private isListening = false;
+
+  constructor() {
+    this.setupMessageListener();
+  }
+
+  private setupMessageListener() {
+    if (this.isListening) return;
+
+    window.addEventListener("message", (event) => {
+      const trustedOrigins = [
+        "https://crownie-swap.vercel.app",
+        "http://localhost:3000",
+      ];
+
+      if (!trustedOrigins.includes(event.origin)) {
+        console.log(
+          "🔗 Bridge: Ignoring message from untrusted origin:",
+          event.origin
+        );
+        return;
+      }
+
+      try {
+        const message = event.data;
+
+        if (!message || typeof message !== "object" || !("type" in message)) {
+          console.log("🔗 Bridge: Invalid message format:", message);
+          return;
+        }
+
+        this.handleMessage(message as BridgeMessage);
+      } catch (error) {
+        console.error("🔗 Bridge: Error handling message:", error);
+      }
+    });
+
+    this.isListening = true;
+    console.log("✅ Bridge Listener: Message listener set up");
+  }
+
+  private async handleMessage(message: any) {
+    console.log("🔗 Bridge: Received message:", message);
+
+    try {
+      switch (message.type) {
+        case "ORDER_CREATED":
+          await this.handleOrderCreated(message as OrderCreatedMessage);
+          break;
+        case "ORDER_UPDATED":
+          await this.handleOrderUpdated(message as OrderUpdatedMessage);
+          break;
+        default:
+          console.log("🔗 Bridge: Unknown message type:", message.type);
+      }
+    } catch (error) {
+      console.error("🔗 Bridge: Error handling message:", error);
+    }
+  }
+
+  private async handleOrderCreated(message: OrderCreatedMessage) {
+    console.log(
+      "📋 Bridge: Order created:",
+      message.orderId,
+      "for meeting:",
+      message.meetingId
+    );
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "ORDER_CREATED",
+        data: {
+          orderId: message.orderId,
+          meetingId: message.meetingId,
+          ...message.data,
+        },
+      });
+
+      console.log("✅ Bridge: Order created response:", response);
+    } catch (error) {
+      console.error("❌ Bridge: Failed to send order created message:", error);
+    }
+  }
+
+  private async handleOrderUpdated(message: OrderUpdatedMessage) {
+    console.log(
+      "📋 Bridge: Order updated:",
+      message.orderId,
+      "with updates:",
+      message.updates
+    );
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "ORDER_UPDATED",
+        data: {
+          orderId: message.orderId,
+          updates: message.updates,
+        },
+      });
+
+      console.log("✅ Bridge: Order updated response:", response);
+    } catch (error) {
+      console.error("❌ Bridge: Failed to send order updated message:", error);
+    }
+  }
+
+  sendMessageToWebPage(message: any) {
+    try {
+      window.postMessage(message, "*");
+      console.log("🔗 Bridge: Sent message to web page:", message);
+    } catch (error) {
+      console.error("❌ Bridge: Failed to send message to web page:", error);
+    }
+  }
+}
+
+const bridgeListener = new BridgeListener();
+
+export { bridgeListener, BridgeListener };
+export type { BridgeMessage, OrderCreatedMessage, OrderUpdatedMessage };
+
+console.log("✅ Bridge Listener: Initialized successfully");

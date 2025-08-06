@@ -63,3 +63,10 @@ npm run test
 -  Multi-Party Consent for Escrow Swaps
 -  Live Streaming Auctions
 -  KYC-Free P2P Escrows for Small Teams or Friends
+-  DAO treasury management
+-  Community-coordinated asset redistribution.
+
+
+#### Contracts
+
+Resolver Contract: [`0x689b5A63B715a3bA57a900B58c74dA60F98F1370`](https://testnet.explorer.etherlink.com/tx/0xcc682648a0787414b340d5148c3a467b3ae3306670bc7563a7b62b47708575d0)

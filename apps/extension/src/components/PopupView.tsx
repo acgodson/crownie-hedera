@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import browser from 'webextension-polyfill'
 import {
   X,
   Check,
@@ -11,10 +12,6 @@ import {
   Phone,
   Globe,
   ArrowLeft,
-  DollarSign,
-  Clock,
-  Wallet,
-  Loader
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useMeetingStore } from '../stores/meetingStore'
@@ -26,42 +23,93 @@ import discordIcon from '../assets/discord.png'
 import ordersIcon from '../assets/orders.png'
 import historyIcon from '../assets/history.png'
 
-const PopupView: React.FC = () => {
-  const {
-    isRecording,
-    platform,
-    duration,
-    createMeeting,
-    stopRecording,
-    detectPlatform,
-    getActiveOrders
-  } = useMeetingStore()
+interface MeetingState {
+  isRecording: boolean
+  meetingId?: string
+  platform?: string
+  duration: number
+  isActive: boolean
+}
 
+
+const PopupView: React.FC = () => {
   const [currentView, setCurrentView] = useState<'main' | 'orders' | 'history'>('main')
-  const [meetingDetected, setMeetingDetected] = useState(false)
+  const [meetingState, setMeetingState] = useState<MeetingState>({
+    isRecording: false,
+    duration: 0,
+    isActive: false
+  })
   const [meetingCode, setMeetingCode] = useState('')
+  
+  // Orders state - now using chrome.storage.local
+  const [orders, setOrders] = useState<Record<string, any>>({})
+  const [activeOrderIds, setActiveOrderIds] = useState<string[]>([])
 
   useEffect(() => {
-    // Check if we're on a meeting platform
-    const detectedPlatform = detectPlatform()
-    setMeetingDetected(!!detectedPlatform)
+    checkMeetingStatus()
+    loadOrders()
+    
+    // Poll for meeting status changes and orders - reduced frequency to prevent spam
+    const interval = setInterval(() => {
+      checkMeetingStatus()
+      loadOrders()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
-    // Generate mock meeting code if detected
-    if (detectedPlatform) {
-      setMeetingCode(Math.floor(Math.random() * 900000000000) + 100000000000 + '')
+  const loadOrders = async () => {
+    try {
+      const result = await browser.storage.local.get(['orders'])
+      if (result.orders) {
+        setOrders(result.orders)
+        console.log('📋 Popup: Loaded orders from storage:', Object.keys(result.orders).length)
+      }
+    } catch (error) {
+      console.error('Failed to load orders:', error)
     }
-  }, [detectPlatform])
+  }
+
+  const checkMeetingStatus = async () => {
+    try {
+      const response = await browser.runtime.sendMessage({ action: 'GET_MEETING_STATUS' }) as any
+      if (response) {
+        setMeetingState(prev => ({
+          ...prev,
+          platform: response.platform,
+          isActive: response.isMeetingDetected,
+          meetingId: response.meetingId,
+          isRecording: response.isRecording,
+          duration: response.recordingDuration
+        }))
+        
+        // Generate meeting code if detected
+        if (response.isMeetingDetected && !meetingCode) {
+          setMeetingCode(Math.floor(Math.random() * 900000000000) + 100000000000 + '')
+        }
+      }
+    } catch (error) {
+      console.log('Failed to get meeting status:', error)
+      setMeetingState(prev => ({ ...prev, platform: undefined, isActive: false }))
+    }
+  }
+
 
   const handleStartRecording = async () => {
     try {
-      await createMeeting()
+      await browser.runtime.sendMessage({ action: 'START_RECORDING' })
+      setMeetingState(prev => ({ ...prev, isRecording: true }))
     } catch (error) {
       console.error('Failed to start recording:', error)
     }
   }
 
-  const handleStopRecording = () => {
-    stopRecording()
+  const handleStopRecording = async () => {
+    try {
+      await browser.runtime.sendMessage({ action: 'STOP_RECORDING' })
+      setMeetingState(prev => ({ ...prev, isRecording: false, duration: 0 }))
+    } catch (error) {
+      console.error('Failed to stop recording:', error)
+    }
   }
 
   const formatDuration = (seconds: number): string => {
@@ -87,35 +135,7 @@ const PopupView: React.FC = () => {
     }
   }
 
-  const mockOrders = [
-    {
-      id: '7844245',
-      fromAmount: '2.5',
-      fromToken: 'ETH',
-      toAmount: '800',
-      toToken: 'ICP',
-      rate: '320',
-      status: 'pending'
-    },
-    {
-      id: '4521245',
-      fromAmount: '1,000',
-      fromToken: 'ICP',
-      toAmount: '0.00125',
-      toToken: 'ETH',
-      rate: '0.00125',
-      status: 'fulfilled'
-    },
-    {
-      id: '1021426',
-      fromAmount: '5',
-      fromToken: 'ETH',
-      toAmount: '780',
-      toToken: 'ICP',
-      rate: '156',
-      status: 'pending'
-    }
-  ]
+
 
   const mockMeetings = [
     {
@@ -150,57 +170,184 @@ const PopupView: React.FC = () => {
 
   if (currentView === 'orders') {
     return (
-      <div className="w-80 h-96 bg-crownie-dark text-white">
+      <div className="w-full max-w-80 h-[500px] text-white flex flex-col relative" 
+           style={{
+             background: '#1a1a1a',
+             backgroundImage: `
+               linear-gradient(rgba(243, 186, 80, 0.03) 1px, transparent 1px),
+               linear-gradient(90deg, rgba(243, 186, 80, 0.03) 1px, transparent 1px)
+             `,
+             backgroundSize: '20px 20px'
+           }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-4 py-4 border-b" style={{ borderColor: 'rgba(243, 186, 80, 0.1)' }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setCurrentView('main')} className="p-1 hover:bg-gray-800 rounded">
+            <button onClick={() => setCurrentView('main')} className="p-1 hover:bg-white/10 rounded">
               <ArrowLeft className="w-4 h-4" />
             </button>
             <span className="font-medium">Orders</span>
           </div>
-          {/* <div className="flex items-center gap-2">
-            <img src={logo} alt="Crownie" className="w-6 h-6" />
-            <span className="text-xs text-gray-400">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
-          </div> */}
         </div>
 
         {/* Orders List */}
-        <div className="p-4 space-y-3 overflow-y-auto h-80">
-          {mockOrders.map((order) => (
-            <div key={order.id} className="bg-gray-900 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-white font-medium">
-                  {order.fromAmount} {order.fromToken}
-                </div>
-                <div className="text-xs text-gray-400">ID: {order.id}</div>
+        <div className="flex-1 px-4 py-4 space-y-3 overflow-y-auto">
+          {Object.values(orders).length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                No orders yet
               </div>
-
-              <div className="text-xs text-gray-400 mb-2">
-                Limit price: 1 {order.fromToken} = {order.rate} {order.toToken}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-xs text-white">{order.fromToken[0]}</span>
-                  </div>
-                  <ArrowLeft className="w-3 h-3 text-gray-500 rotate-180" />
-                  <div className="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                    <span className="text-xs text-white">{order.toToken[0]}</span>
-                  </div>
-                </div>
-
-                {order.status === 'pending' ? (
-                  <button className="bg-crownie-primary text-crownie-dark px-3 py-1 rounded text-xs font-medium">
-                    Fulfill Order
-                  </button>
-                ) : (
-                  <span className="text-green-400 text-xs">Order Fulfilled</span>
-                )}
+              <div className="text-xs mt-1" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+                Start a trade to see orders here
               </div>
             </div>
-          ))}
+          ) : (
+            Object.values(orders).map((order: any) => (
+              <div key={order.id} style={{ background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(243, 186, 80, 0.1)' }} className="rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-white font-medium">
+                    {order.fromAmount} {order.fromToken}
+                  </div>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(order.id)}
+                    className="text-xs hover:text-white transition-colors cursor-pointer" 
+                    style={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                    title="Copy Order ID"
+                  >
+                    ID: {order.id.slice(0, 8)}... 📋
+                  </button>
+                </div>
+
+                <div className="text-xs mb-2" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  To: {order.toAmount} {order.toToken}
+                </div>
+
+                <div className="text-xs mb-2" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  Meeting: {order.meetingId}
+                </div>
+
+                {order.escrowAddress && (
+                  <div className="text-xs mb-2" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                    Escrow: 
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(order.escrowAddress)}
+                      className="ml-1 hover:text-white transition-colors cursor-pointer"
+                      title="Copy Escrow Address"
+                    >
+                      {order.escrowAddress.slice(0, 6)}...{order.escrowAddress.slice(-4)} 📋
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: '#F3BA50' }}>
+                      <span className="text-xs text-black font-bold">{order.fromToken?.[0] || '?'}</span>
+                    </div>
+                    <ArrowLeft className="w-3 h-3 rotate-180" style={{ color: 'rgba(255, 255, 255, 0.5)' }} />
+                    <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: '#F3BA50' }}>
+                      <span className="text-xs text-black font-bold">{order.toToken?.[0] || '?'}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      order.status === 'pending' ? 'text-black' : 
+                      order.status === 'active' ? 'text-white' : 
+                      order.status === 'fulfilled' ? 'text-white' : 
+                      'text-white'
+                    }`}
+                    style={{ 
+                      background: order.status === 'pending' ? '#F3BA50' : 
+                                 order.status === 'active' ? '#10b981' : 
+                                 order.status === 'fulfilled' ? '#059669' :
+                                 '#6b7280'
+                    }}>
+                      {order.status}
+                    </span>
+                    {activeOrderIds.includes(order.id) && (
+                      <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#F3BA50' }}></div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Escrow Balance Display */}
+                {order.status === 'active' && (
+                  <div className="mt-2 space-y-1 text-xs" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                    <div className="flex justify-between">
+                      <span>Maker Escrow:</span>
+                      <span className="text-white">{order.makerEscrowBalance || '0'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Taker Escrow:</span>
+                      <span className="text-white">{order.takerEscrowBalance || '0'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="mt-3 pt-2 border-t space-y-2" style={{ borderColor: 'rgba(243, 186, 80, 0.1)' }}>
+                  {order.status === 'pending' && (
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await browser.runtime.sendMessage({
+                            action: 'OPEN_FILL_ORDER',
+                            data: {
+                              orderId: order.id,
+                              meetingId: order.meetingId
+                            }
+                          })
+                        } catch (error) {
+                          console.error('Failed to open fill order page:', error)
+                        }
+                      }}
+                      className="w-full py-2 text-xs rounded border hover:bg-white/5 transition-colors"
+                      style={{ borderColor: '#F3BA50', color: '#F3BA50' }}
+                    >
+                      Fill Order
+                    </button>
+                  )}
+                  
+                  {order.status === 'active' && order.makerEscrowBalance && parseFloat(order.makerEscrowBalance) > 0 && (
+                    <button 
+                      onClick={async () => {
+                        try {
+                          // Get meeting secret for completing the order
+                          const secretResponse = await browser.runtime.sendMessage({
+                            action: 'GET_MEETING_SECRET',
+                            data: { meetingId: order.meetingId }
+                          })
+                          
+                          const secret = secretResponse?.secret || ''
+                          
+                          await browser.runtime.sendMessage({
+                            action: 'OPEN_COMPLETE_ORDER',
+                            data: {
+                              orderId: order.id,
+                              meetingId: order.meetingId,
+                              secret
+                            }
+                          })
+                        } catch (error) {
+                          console.error('Failed to open complete order page:', error)
+                        }
+                      }}
+                      className="w-full py-2 text-xs rounded border hover:bg-white/5 transition-colors"
+                      style={{ borderColor: '#10b981', color: '#10b981' }}
+                    >
+                      Complete Order
+                    </button>
+                  )}
+                  
+                  {order.status === 'fulfilled' && (
+                    <div className="text-center text-xs text-green-400 font-medium">
+                      ✅ Order Completed
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     )
@@ -208,95 +355,112 @@ const PopupView: React.FC = () => {
 
   if (currentView === 'history') {
     return (
-      <div className="w-80 h-96 bg-crownie-dark text-white">
+      <div className="w-full max-w-80 h-[500px] text-white flex flex-col relative"
+           style={{
+             background: '#1a1a1a',
+             backgroundImage: `
+               linear-gradient(rgba(243, 186, 80, 0.03) 1px, transparent 1px),
+               linear-gradient(90deg, rgba(243, 186, 80, 0.03) 1px, transparent 1px)
+             `,
+             backgroundSize: '20px 20px'
+           }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-4 py-4 border-b" style={{ borderColor: 'rgba(243, 186, 80, 0.1)' }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setCurrentView('main')} className="p-1 hover:bg-gray-800 rounded">
+            <button onClick={() => setCurrentView('main')} className="p-1 hover:bg-white/10 rounded">
               <ArrowLeft className="w-4 h-4" />
             </button>
             <span className="font-medium">Meeting History</span>
           </div>
-          {/* <div className="flex items-center gap-2">
-            <img src={logo} alt="Crownie" className="w-6 h-6" />
-            <span className="text-xs text-gray-400">{address?.slice(0, 4)}...{address?.slice(-4)}</span> 
-          </div> */}
         </div>
 
         {/* History List */}
-        <div className="p-4 space-y-3 overflow-y-auto h-80">
+        <div className="flex-1 px-4 py-4 space-y-3 overflow-y-auto">
           {mockMeetings.map((meeting) => (
-            <div key={meeting.id} className="bg-gray-900 rounded-lg p-3">
+            <div key={meeting.id} style={{ background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(243, 186, 80, 0.1)' }} className="rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{meeting.title}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded text-xs ${meeting.status === 'Ongoing'
-                    ? 'bg-yellow-500 text-crownie-dark'
-                    : 'bg-green-500 text-white'
-                    }`}>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${meeting.status === 'Ongoing'
+                    ? 'text-black'
+                    : 'text-white'
+                    }`}
+                    style={{ 
+                      background: meeting.status === 'Ongoing' ? '#F3BA50' : '#10b981'
+                    }}>
                     {meeting.status}
                   </span>
                 </div>
               </div>
 
-              <div className="text-xs text-gray-400 mb-2">
+              <div className="text-xs mb-3" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
                 {meeting.date} {meeting.duration}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button className="text-crownie-primary text-xs hover:underline">
+              <div className="flex items-center gap-3">
+                <button className="text-xs hover:underline" style={{ color: '#F3BA50' }}>
                   Download
                 </button>
-                <button className="text-crownie-primary text-xs hover:underline">
+                <button className="text-xs hover:underline" style={{ color: '#F3BA50' }}>
                   Share
                 </button>
               </div>
             </div>
           ))}
         </div>
-      </div >
+      </div>
     )
   }
 
   return (
-    <div className="w-80 h-96 bg-crownie-dark text-white">
+    <div className="w-full max-w-80 h-[500px] text-white flex flex-col relative"
+         style={{
+           background: '#1a1a1a',
+           backgroundImage: `
+             linear-gradient(rgba(243, 186, 80, 0.03) 1px, transparent 1px),
+             linear-gradient(90deg, rgba(243, 186, 80, 0.03) 1px, transparent 1px)
+           `,
+           backgroundSize: '20px 20px'
+         }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-4 border-b" style={{ borderColor: 'rgba(243, 186, 80, 0.1)' }}>
         <div className="flex items-center gap-2">
           <img src={logo} alt="Crownie" className="w-6 h-6" />
           <span className="font-medium">Crownie</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">disconnected</span>
+          <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Ready</span>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        {meetingDetected ? (
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="px-4 py-6 w-full">
+        {meetingState.isActive ? (
           <div className="space-y-4 w-full">
             <div className="flex justify-center">
-              <div className="w-16 h-16 rounded-full border-2 border-crownie-primary bg-crownie-primary/10 flex items-center justify-center mb-4">
-                <Check className="w-6 h-6 text-crownie-primary" />
+              <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center mb-4" style={{ borderColor: '#F3BA50', background: 'rgba(243, 186, 80, 0.1)' }}>
+                <Check className="w-6 h-6" style={{ color: '#F3BA50' }} />
               </div>
             </div>
 
             <h2 className="text-lg font-medium text-center">Meeting Detected</h2>
 
-            {platform && (
+            {meetingState.platform && (
               <div className="flex justify-center">
-                <div className="flex items-center gap-2 px-3 py-1 bg-crownie-primary/20 border border-crownie-primary/30 rounded-full">
-                  {getPlatformIcon(platform)}
-                  <span className="text-sm text-crownie-primary">{platform}</span>
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full border" style={{ background: 'rgba(243, 186, 80, 0.1)', borderColor: 'rgba(243, 186, 80, 0.3)' }}>
+                  {getPlatformIcon(meetingState.platform)}
+                  <span className="text-sm" style={{ color: '#F3BA50' }}>{meetingState.platform}</span>
                 </div>
               </div>
             )}
 
                                                                                                                                                                                               
-            {!isRecording ? (
+            {!meetingState.isRecording ? (
               <button
                 onClick={handleStartRecording}
-                className="w-full bg-crownie-primary text-crownie-dark py-3 rounded-full font-medium flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-full font-medium flex items-center justify-center gap-2 text-black"
+                style={{ background: '#F3BA50' }}
               >
                 <Mic className="w-4 h-4" />
                 Start Recording
@@ -304,19 +468,26 @@ const PopupView: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 <div className="text-center">
-                  <div className="text-sm text-gray-400 mb-1">Recording in progress</div>
-                  <div className="text-xs text-gray-500">Audio is being recorded and sent to Crownie</div>
+                  <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Recording in progress</div>
+                  <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Audio is being recorded and sent to Crownie</div>
 
                   <div className="flex items-center justify-center gap-1 my-3">
-                    <div className="w-1 h-1 bg-crownie-primary rounded-full animate-pulse"></div>
-                    <div className="w-1 h-1 bg-crownie-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                    <div className="w-1 h-1 bg-crownie-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                    <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50' }}></div>
+                    <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50', animationDelay: '0.2s' }}></div>
+                    <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50', animationDelay: '0.4s' }}></div>
                   </div>
+                  
+                  {meetingState.duration > 0 && (
+                    <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      Duration: {formatDuration(meetingState.duration)}
+                    </div>
+                  )}
                 </div>
 
                 <button
                   onClick={handleStopRecording}
-                  className="w-full bg-transparent border border-crownie-primary text-crownie-primary py-3 rounded-full font-medium flex items-center justify-center gap-2"
+                  className="w-full bg-transparent border py-3 rounded-full font-medium flex items-center justify-center gap-2"
+                  style={{ borderColor: '#F3BA50', color: '#F3BA50' }}
                 >
                   <MicOff className="w-4 h-4" />
                   Stop Recording
@@ -326,68 +497,69 @@ const PopupView: React.FC = () => {
 
             {/* Meeting Code */}
             {meetingCode && (
-              <div className="bg-gray-900 rounded-lg p-3 text-center">
-                <div className="text-xs text-gray-400 mb-1">Meeting Code</div>
+              <div className="rounded-lg p-3 text-center border" style={{ background: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(243, 186, 80, 0.1)' }}>
+                <div className="text-xs mb-1" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Meeting Code</div>
                 <div className="text-sm font-mono text-white">{meetingCode}</div>
               </div>
             )}
           </div>
         ) : (
           /* No Meeting Detected - Platform Selection UI */
-          <div className="space-y-4 w-full">
+          <div className="space-y-3 w-full overflow-y-auto">
             {/* Status Circle */}
             <div className="flex justify-center">
-              <div className="w-16 h-16 rounded-full border-2 border-crownie-primary/50 flex items-center justify-center mb-4">
-                <X className="w-6 h-6 text-crownie-primary/50" />
+              <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center mb-2" style={{ borderColor: 'rgba(243, 186, 80, 0.5)' }}>
+                <X className="w-5 h-5" style={{ color: 'rgba(243, 186, 80, 0.5)' }} />
               </div>
             </div>
 
             {/* Status Text */}
-            <h2 className="text-lg font-medium text-center mb-4">No meeting detected</h2>
+            <h2 className="text-base font-medium text-center mb-3">No meeting detected</h2>
 
-            {/* Platform Buttons */}
+            {/* Platform Buttons - Compact Layout */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 border border-crownie-primary/30 rounded-lg">
+              <div className="flex items-center gap-2 px-2 py-2 border rounded-lg" style={{ borderColor: 'rgba(243, 186, 80, 0.3)' }}>
                 <img src={googleMeetIcon} alt="Google Meet" className="w-4 h-4" />
-                <span className="text-sm">Google Meet</span>
+                <span className="text-xs">Google Meet</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 border border-crownie-primary/30 rounded-lg">
+              <div className="flex items-center gap-2 px-2 py-2 border rounded-lg" style={{ borderColor: 'rgba(243, 186, 80, 0.3)' }}>
                 <img src={zoomIcon} alt="Zoom" className="w-4 h-4" />
-                <span className="text-sm">Zoom</span>
+                <span className="text-xs">Zoom</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 px-3 py-2 border border-crownie-primary/30 rounded-lg">
+            <div className="flex items-center gap-2 px-2 py-2 border rounded-lg" style={{ borderColor: 'rgba(243, 186, 80, 0.3)' }}>
               <img src={teamsIcon} alt="Microsoft Teams" className="w-4 h-4" />
-              <span className="text-sm">Microsoft Teams</span>
+              <span className="text-xs">Microsoft Teams</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 border border-crownie-primary/30 rounded-lg">
-                <Phone className="w-4 h-4 text-crownie-primary" />
-                <span className="text-sm">Cisco Webex</span>
+              <div className="flex items-center gap-2 px-2 py-2 border rounded-lg" style={{ borderColor: 'rgba(243, 186, 80, 0.3)' }}>
+                <Phone className="w-4 h-4" style={{ color: '#F3BA50' }} />
+                <span className="text-xs">Cisco Webex</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 border border-crownie-primary/30 rounded-lg">
+              <div className="flex items-center gap-2 px-2 py-2 border rounded-lg" style={{ borderColor: 'rgba(243, 186, 80, 0.3)' }}>
                 <img src={discordIcon} alt="Discord" className="w-4 h-4" />
-                <span className="text-sm">Discord</span>
+                <span className="text-xs">Discord</span>
               </div>
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Bottom Navigation */}
-      <div className="flex border-t border-gray-800">
+      <div className="flex border-t" style={{ borderColor: 'rgba(243, 186, 80, 0.1)' }}>
         <button
           onClick={() => setCurrentView('orders')}
-          className="flex-1 flex flex-col items-center gap-1 p-3 hover:bg-gray-900 transition-colors"
+          className="flex-1 flex flex-col items-center gap-1 p-3 hover:bg-white/5 transition-colors"
         >
           <img src={ordersIcon} alt="Orders" className="w-4 h-4" />
           <span className="text-xs">Orders</span>
         </button>
         <button
           onClick={() => setCurrentView('history')}
-          className="flex-1 flex flex-col items-center gap-1 p-3 hover:bg-gray-900 transition-colors"
+          className="flex-1 flex flex-col items-center gap-1 p-3 hover:bg-white/5 transition-colors"
         >
           <img src={historyIcon} alt="History" className="w-4 h-4" />
           <span className="text-xs">History</span>

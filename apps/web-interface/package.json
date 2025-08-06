@@ -7,14 +7,20 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fund-contract": "node scripts/fund-contract.js",
+    "test-contract": "node scripts/test-contract.js"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.84.1",
     "@wagmi/core": "^2.18.1",
     "buffer": "^6.0.3",
+    "dotenv": "16.4.5",
+    "ethers": "6.13.2",
+    "lucide-react": "^0.469.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.1.0",
     "stream-browserify": "^3.0.0",
     "util": "^0.12.5",
     "viem": "^2.33.2",
