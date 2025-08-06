@@ -180,7 +180,7 @@ export function useSwapState(
         args: [orderHash, order.salt],
       })) as [`0x${string}`, `0x${string}`];
 
-      const [predictedMakerEscrow, predictedTakerEscrow] = escrowAddresses;
+      const [predictedMakerEscrow] = escrowAddresses;
 
       const userBalance = await publicClient.readContract({
         address: order.makerToken,
