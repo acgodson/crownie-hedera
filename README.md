@@ -23,7 +23,7 @@ Crownie is a social consensus layer built into a browser extension that transfor
 
 ``` 
 ┌─────────────────────────┐    ┌─────────────────────────┐
-│     Etherlink Chain     │    │    Crownie Extension    │
+│     Smart Contract      │    │    Crownie Extension    │
 │  ┌─────────────────┐    │    │  ┌─────────────────┐    │
 │  │ Escrow Factory  │    │    │  │ Live Meeting    │    │
 │  │   Contract      │    │◄───┼──┤   Relayer       │    │
@@ -48,7 +48,7 @@ Crownie is a social consensus layer built into a browser extension that transfor
 
 1. **Clone & Setup**
 ```bash
-git clone https://github.com/acgodson/crownie-etherlink
+git clone https://github.com/acgodson/crownie-hedera
 cd crownie-swap
 pnpm install
 ```
@@ -56,7 +56,7 @@ pnpm install
 ```bash
 
 cp .env.example .env
-# Fill in private Key of Testnet account with XTZ, USDC, USDT. Visit faucet page for Tokens
+# Fill in private Key of Testnet account with  USDC, USDT, HBAR
 npm run test
 ```
 
@@ -71,4 +71,4 @@ npm run test
 
 #### Contracts
 
-Resolver Contract: [`0x689b5A63B715a3bA57a900B58c74dA60F98F1370`](https://testnet.explorer.etherlink.com/tx/0xcc682648a0787414b340d5148c3a467b3ae3306670bc7563a7b62b47708575d0)
+Resolver Contract: [`0.0.0`]('')
