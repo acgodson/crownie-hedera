@@ -92,13 +92,12 @@ const SolutionSection = () => (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
 
                     <div className="backdrop-blur-md bg-white bg-opacity-5 rounded-2xl p-8 border border-white border-opacity-20 text-left">
-                        <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-6 mb-6 relative overflow-hidden">
-                            <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-700 opacity-50"></div>
-                            <div className="relative z-10 flex items-center justify-center">
-                                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
-                                </svg>
-                            </div>
+                        <div className="rounded-2xl mb-6 relative overflow-hidden" style={{ height: '200px' }}>
+                            <img
+                                src="/voice-native.png"
+                                alt="Voice Native Integration"
+                                className="w-full h-full object-cover rounded-xl"
+                            />
                         </div>
                         <h4 className="text-xl font-semibold text-white mb-4">Voice-Native Capture</h4>
                         <ul className="text-gray-300 text-sm leading-relaxed space-y-2">
@@ -109,31 +108,12 @@ const SolutionSection = () => (
 
 
                     <div className="backdrop-blur-md bg-white bg-opacity-5 rounded-2xl p-8 border border-white border-opacity-20 text-left">
-                        <div className="bg-gray-800 rounded-2xl p-6 mb-6 relative">
-                            <div className="text-center">
-                                <div className="mb-4">
-                                    <h5 className="text-crownie-primary text-sm font-semibold">Crownie Solution</h5>
-                                </div>
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                                            <span className="text-white text-xs">👤</span>
-                                        </div>
-                                        <span className="text-white text-sm">Voice-Native</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                                            <span className="text-white text-xs">🤖</span>
-                                        </div>
-                                        <span className="text-white text-sm">AI Agent Summarizer</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="w-8 h-8 bg-blue-600 rounded-full"></div>
-                                    <div className="w-8 h-8 bg-green-600 rounded-full"></div>
-                                    <div className="w-8 h-8 bg-purple-600 rounded-full"></div>
-                                </div>
-                            </div>
+                        <div className="rounded-2xl mb-6 relative overflow-hidden" style={{ height: '200px' }}>
+                            <img
+                                src="/summarizer.png"
+                                alt="AI Agent Summarizer"
+                                className="w-full h-full object-cover rounded-xl"
+                            />
                         </div>
                         <h4 className="text-xl font-semibold text-white mb-4">AI Agent Summarizer & Intent Extractor</h4>
                         <ul className="text-gray-300 text-sm leading-relaxed space-y-2">
@@ -144,11 +124,12 @@ const SolutionSection = () => (
 
 
                     <div className="backdrop-blur-md bg-white bg-opacity-5 rounded-2xl p-8 border border-white border-opacity-20 text-left">
-                        <div className="bg-gradient-to-br from-orange-600 to-red-600 rounded-2xl p-6 mb-6 relative overflow-hidden">
-                            <div className="absolute inset-0 bg-black bg-opacity-20"></div>
-                            <div className="relative z-10">
-                                <div className="w-full h-32 bg-cover bg-center rounded-lg" style={{ backgroundImage: 'linear-gradient(45deg, #f59e0b 0%, #dc2626 100%)' }}></div>
-                            </div>
+                        <div className="rounded-2xl mb-6 relative overflow-hidden" style={{ height: '200px' }}>
+                            <img
+                                src="/laptop.png"
+                                alt="Intent Anchoring"
+                                className="w-full h-full object-cover rounded-xl"
+                            />
                         </div>
                         <h4 className="text-xl font-semibold text-white mb-4">Intent Anchoring</h4>
                         <ul className="text-gray-300 text-sm leading-relaxed space-y-2">
@@ -165,61 +146,17 @@ const SolutionSection = () => (
                     Turn conversations into <span className="text-crownie-primary">on-chain action.</span>
                 </h4>
 
-
-                <div className="max-w-2xl mx-auto p-8 border-2 border-crownie-primary rounded-2xl bg-gray-900 bg-opacity-30 backdrop-blur-sm relative">
-
-                    <div
-                        className="absolute inset-4 opacity-20"
-                        style={{
-                            backgroundImage: `
-                  radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px)
-                `,
-                            backgroundSize: '20px 20px'
-                        }}
+                <div className="max-w-4xl mx-auto">
+                    <img 
+                        src="/on-chain-actions.png" 
+                        alt="On-Chain Actions Integration" 
+                        className="w-full h-auto rounded-2xl"
                     />
-
-                    <div className="relative z-10">
-
-                        <div className="flex justify-center items-center gap-8 mb-8">
-                            <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl">📊</span>
-                            </div>
-                            <div className="w-16 h-16 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">📹</span>
-                            </div>
-                            <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">🎯</span>
-                            </div>
-                            <div className="w-16 h-16 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">💬</span>
-                            </div>
-                        </div>
-
-
-                        <div className="mb-8">
-                            <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center shadow-lg">
-                                <img src="/logo.png" alt="Crownie" className="w-12 h-12" />
-                            </div>
-                        </div>
-
-
-                        <div className="flex justify-center items-center gap-8">
-                            <div className="w-16 h-16 bg-green-500 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">📁</span>
-                            </div>
-                            <div className="w-16 h-16 bg-blue-700 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">👥</span>
-                            </div>
-                            <div className="w-16 h-16 bg-blue-400 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-2xl text-white">💼</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-12">
                     <a 
-                        href="https://github.com/acgodson/crownie-etherlink/releases/tag/v0.0.14" 
+                        href="https://github.com/acgodson/crownie-etherlink/releases" 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg hover:bg-crownie-secondary transition-colors inline-block"

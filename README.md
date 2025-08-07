@@ -2,13 +2,13 @@
 
 Crownie is a social consensus layer built into a browser extension that transforms live meetings into secure, coordinated asset swaps using hashlocked escrows and real-time decision making.
 
+![Crownie in Action](apps/web-interface/public/crownie-call.png)
 
-
+![Crownie Extension States](apps/web-interface/public/extension-screens.png)
 
 **Key Features:**
 - **Atomic Swaps**: All-or-nothing guarantees using HTLCs 
 - **Social Coordination**: Crownie Extension serves as offchain relayer during live meeting
-
 
 
 ## Architecture

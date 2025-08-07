@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import SwapWidgetBase from './SwapWidgetBase'
 import { useSwapState } from '../hooks/useSwapState'
 import { useExtensionBridge } from '../hooks/useExtensionBridge'
+import Footer from './organisms/footer'
 
 export default function SwapWidget() {
     const [searchParams] = useSearchParams()
@@ -173,9 +174,7 @@ export default function SwapWidget() {
             <div className="relative z-10 min-h-screen flex flex-col">
                 <header className="flex items-center justify-between px-6 py-4">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-crownie-orange rounded-lg flex items-center justify-center">
-                            <span className="text-black font-bold text-sm">C</span>
-                        </div>
+                        <img src="/logo.png" alt="Crownie" className="w-8 h-8" />
                         <span className="text-white font-semibold text-lg">Crownie</span>
                     </div>
 
@@ -241,42 +240,7 @@ export default function SwapWidget() {
                     </div>
                 </main>
 
-                <footer className="px-6 py-8">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-sm">
-                        <div>
-                            <h3 className="text-white font-semibold mb-4">Product</h3>
-                            <ul className="space-y-2 text-gray-400">
-                                <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Solution</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Watch Demo</a></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h3 className="text-white font-semibold mb-4">Social Media</h3>
-                            <ul className="space-y-2 text-gray-400">
-                                <li><a href="#" className="hover:text-white transition-colors">Twitter</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">LinkedIn</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">GitHub</a></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h3 className="text-white font-semibold mb-4">Legal</h3>
-                            <ul className="space-y-2 text-gray-400">
-                                <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div className="mt-8 pt-8 border-t border-gray-800 text-center">
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                            <div className="w-6 h-6 bg-crownie-orange rounded-lg flex items-center justify-center">
-                                <span className="text-black font-bold text-xs">C</span>
-                            </div>
-                            <span className="text-white font-semibold">Crownie</span>
-                        </div>
-                        <p className="text-gray-400 text-sm">© 2025 Crownie. All rights reserved.</p>
-                    </div>
-                </footer>
+                <Footer />
             </div>
         </div>
     )

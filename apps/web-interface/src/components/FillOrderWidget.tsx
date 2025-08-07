@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAccount, useConnect, useDisconnect, usePublicClient, useWalletClient } from 'wagmi'
 import { useEffect, useState } from 'react'
 import { useExtensionBridge } from '../hooks/useExtensionBridge'
+import Footer from './organisms/footer'
 import RESOLVER from "../assets/Resolver.json"
 
 const RESOLVER_ADDRESS = import.meta.env.VITE_RESOLVER_CONTRACT_ADDRESS || '0x689b5A63B715a3bA57a900B58c74dA60F98F1370'
@@ -258,9 +259,7 @@ export default function FillOrderWidget() {
             <div className="relative z-10 min-h-screen flex flex-col">
                 <header className="flex items-center justify-between px-6 py-4">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-crownie-orange rounded-lg flex items-center justify-center">
-                            <span className="text-black font-bold text-sm">C</span>
-                        </div>
+                        <img src="/logo.png" alt="Crownie" className="w-8 h-8" />
                         <span className="text-white font-semibold text-lg">Fill Order</span>
                     </div>
 
@@ -346,17 +345,7 @@ export default function FillOrderWidget() {
                     </div>
                 </main>
 
-                <footer className="px-6 py-8">
-                    <div className="text-center">
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                            <div className="w-6 h-6 bg-crownie-orange rounded-lg flex items-center justify-center">
-                                <span className="text-black font-bold text-xs">C</span>
-                            </div>
-                            <span className="text-white font-semibold">Crownie</span>
-                        </div>
-                        <p className="text-gray-400 text-sm">© 2025 Crownie. All rights reserved.</p>
-                    </div>
-                </footer>
+                <Footer />
             </div>
         </div>
     )
