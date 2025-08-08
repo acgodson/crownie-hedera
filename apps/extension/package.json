@@ -21,13 +21,13 @@
   "author": "godson",
   "license": "MIT",
   "dependencies": {
+    "@hashgraph/sdk": "^2.70.0",
     "archiver": "^7.0.1",
-    "ethers": "6.13.2",
+    "hedera-agent-kit": "^3.0.7",
     "lucide-react": "^0.469.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.1.0",
-    "viem": "^2.33.2",
     "webextension-polyfill": "^0.12.0",
     "zustand": "^5.0.6"
   },

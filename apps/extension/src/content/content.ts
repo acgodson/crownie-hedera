@@ -1,4 +1,5 @@
-import { keccak256, toHex } from "viem";
+import { StorageService } from '../services/StorageService';
+import { MeetingService } from '../services/MeetingService';
 
 interface MeetingInfo {
   platform: string;
@@ -530,7 +531,13 @@ class CrownieOverlayManager {
   }
 
   private generateHashLock(secret: string): string {
-    return keccak256(toHex(secret));
+    let hash = 0;
+    for (let i = 0; i < secret.length; i++) {
+      const char = secret.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return `0x${Math.abs(hash).toString(16).padStart(8, '0')}`;
   }
 
   private startRecording() {
@@ -719,6 +726,7 @@ class CrownieOverlayManager {
 }
 
 const overlayManager = new CrownieOverlayManager();
+const meetingService = new MeetingService();
 
 function detectPlatform(): string | null {
   const url = window.location.href;
@@ -785,34 +793,23 @@ function isMeetingActive(): boolean {
 }
 
 function getMeetingInfo() {
-  const platform = detectPlatform();
-  const isActive = isMeetingActive();
-
-  let meetingId = "";
-  let title = "";
-
-  if (platform === "Google Meet") {
-    const urlMatch = window.location.pathname.match(/\/([a-z\-]+)$/);
-    meetingId = urlMatch ? urlMatch[1] : "";
-    title = document.title || `Google Meet - ${meetingId}`;
-  } else if (platform === "Zoom") {
-    meetingId =
-      new URLSearchParams(window.location.search).get("confno") ||
-      window.location.pathname.split("/").pop() ||
-      "";
-    title = document.title || `Zoom Meeting - ${meetingId}`;
-  } else if (platform === "Microsoft Teams") {
-    meetingId =
-      new URLSearchParams(window.location.search).get("threadId") ||
-      Math.random().toString(36).substring(2, 11);
-    title = document.title || `Teams Meeting - ${meetingId}`;
+  const detectedMeeting = meetingService.detectMeeting();
+  
+  if (detectedMeeting) {
+    return {
+      platform: detectedMeeting.platform,
+      isActive: detectedMeeting.isActive,
+      meetingId: detectedMeeting.meetingId,
+      title: detectedMeeting.title,
+      url: detectedMeeting.url,
+    };
   }
 
   return {
-    platform,
-    isActive,
-    meetingId,
-    title,
+    platform: null,
+    isActive: false,
+    meetingId: "",
+    title: "",
     url: window.location.href,
   };
 }
@@ -1040,6 +1037,8 @@ function handleOrderCompleted(data: any) {
     });
 }
 
+let lastMeetingState = { isActive: false, meetingId: "" };
+
 function initializeContentScript() {
   const currentUrl = window.location.href;
 
@@ -1052,23 +1051,38 @@ function initializeContentScript() {
   }
 
   const meetingInfo = getMeetingInfo();
+  
+  console.log('🔍 Content: Meeting detection result:', meetingInfo);
 
   if (meetingInfo.platform && meetingInfo.isActive) {
-    overlayManager.showOverlay({
-      platform: meetingInfo.platform,
-      isActive: meetingInfo.isActive,
-      meetingId: meetingInfo.meetingId,
-      title: meetingInfo.title,
-    });
+    if (!lastMeetingState.isActive || lastMeetingState.meetingId !== meetingInfo.meetingId) {
+      overlayManager.showOverlay({
+        platform: meetingInfo.platform,
+        isActive: meetingInfo.isActive,
+        meetingId: meetingInfo.meetingId,
+        title: meetingInfo.title,
+      });
 
-    chrome.runtime
-      .sendMessage({
-        action: "MEETING_DETECTED",
-        data: meetingInfo,
-      })
-      .catch((error) => {});
+      chrome.runtime
+        .sendMessage({
+          action: "MEETING_DETECTED",
+          data: meetingInfo,
+        })
+        .catch(() => {});
+    }
+    
+    lastMeetingState = { isActive: true, meetingId: meetingInfo.meetingId };
   } else {
+    if (lastMeetingState.isActive) {
+      chrome.runtime
+        .sendMessage({
+          action: "MEETING_ENDED",
+        })
+        .catch(() => {});
+    }
+    
     overlayManager.hideOverlay();
+    lastMeetingState = { isActive: false, meetingId: "" };
   }
 }
 

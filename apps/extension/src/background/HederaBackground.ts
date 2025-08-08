@@ -1,20 +1,16 @@
 import browser from "webextension-polyfill";
 import { HederaAgent } from '../agents/HederaAgent';
 import { StorageService } from '../services/StorageService';
-import { MeetingService } from '../services/MeetingService';
 import type { MeetingSession, AgentConfig } from '../types';
 
 class CrownieHederaBackground {
   private hederaAgent: HederaAgent;
-  private meetingService: MeetingService;
   private keepAliveInterval: NodeJS.Timeout | null = null;
   private isInitialized = false;
-  private currentMeetingInfo: any = null;
 
   constructor() {
     this.hederaAgent = new HederaAgent();
-    this.meetingService = new MeetingService();
-    this.setupMessageListener();
+    this.setupMessageListener(); 
     this.setupKeepalive();
     this.initializeAgent();
   }
@@ -32,7 +28,7 @@ class CrownieHederaBackground {
       this.isInitialized = true;
       console.log('✅ Hedera Agent initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Hedera Agent:', error);
+      console.error('❌ Failed to initialize Hedera Agent:', error);
       this.isInitialized = false;
     }
   }
@@ -43,9 +39,6 @@ class CrownieHederaBackground {
         switch (message?.action) {
           case "MEETING_DETECTED":
             return await this.handleMeetingDetected(message.data);
-          case "MEETING_ENDED":
-            this.currentMeetingInfo = null;
-            return { success: true };
           case "GET_MEETING_STATUS":
             return await this.getMeetingStatus();
           case "START_RECORDING":
@@ -66,15 +59,13 @@ class CrownieHederaBackground {
             return await this.saveMeetingSecret(message.data);
           case "GET_MEETING_SECRET":
             return await this.getMeetingSecret(message.data);
-          case "IMPORT_ACCOUNT":
-            return await this.importAccount(message.data);
           case "OPEN_POPUP":
             return await this.openPopup();
           default:
             return { error: `Unknown action: ${message?.action}` };
         }
       } catch (error) {
-        console.error('Background: Message handler error:', error);
+        console.error('❌ Background: Message handler error:', error);
         return { 
           error: error instanceof Error ? error.message : 'Unknown error',
           success: false 
@@ -100,8 +91,6 @@ class CrownieHederaBackground {
         throw new Error('Agent not initialized');
       }
 
-      this.currentMeetingInfo = data;
-
       const session = await this.hederaAgent.startMeetingSession(
         data.meetingId,
         data.platform,
@@ -114,7 +103,7 @@ class CrownieHederaBackground {
         hcsTopicId: session.hcsTopicId
       };
     } catch (error) {
-      console.error('Background: Failed to handle meeting detection:', error);
+      console.error('❌ Background: Failed to handle meeting detection:', error);
       throw error;
     }
   }
@@ -124,10 +113,7 @@ class CrownieHederaBackground {
       const activeSessions = await this.hederaAgent.getActiveSessions();
       const latestSession = activeSessions[activeSessions.length - 1];
 
-      console.log('🔍 Background: Getting meeting status - activeSessions:', activeSessions.length, 'currentMeetingInfo:', this.currentMeetingInfo);
-
-      if (!latestSession && !this.currentMeetingInfo) {
-        console.log('🔍 Background: No session or meeting info found');
+      if (!latestSession) {
         return {
           isMeetingDetected: false,
           isRecording: false,
@@ -135,36 +121,15 @@ class CrownieHederaBackground {
         };
       }
 
-      if (latestSession) {
-        console.log('🔍 Background: Returning session data:', latestSession.meetingInfo);
-        return {
-          isMeetingDetected: true,
-          platform: latestSession.meetingInfo.platform,
-          meetingId: latestSession.meetingInfo.meetingId,
-          title: latestSession.meetingInfo.title,
-          isRecording: latestSession.isRecording,
-          recordingDuration: latestSession.recordingDuration,
-          sessionId: latestSession.sessionId,
-          hcsTopicId: latestSession.hcsTopicId
-        };
-      }
-
-      if (this.currentMeetingInfo) {
-        console.log('🔍 Background: Returning current meeting info:', this.currentMeetingInfo);
-        return {
-          isMeetingDetected: true,
-          platform: this.currentMeetingInfo.platform,
-          meetingId: this.currentMeetingInfo.meetingId,
-          title: this.currentMeetingInfo.title,
-          isRecording: false,
-          recordingDuration: 0
-        };
-      }
-
       return {
-        isMeetingDetected: false,
-        isRecording: false,
-        recordingDuration: 0
+        isMeetingDetected: true,
+        platform: latestSession.meetingInfo.platform,
+        meetingId: latestSession.meetingInfo.meetingId,
+        title: latestSession.meetingInfo.title,
+        isRecording: latestSession.isRecording,
+        recordingDuration: latestSession.recordingDuration,
+        sessionId: latestSession.sessionId,
+        hcsTopicId: latestSession.hcsTopicId
       };
     } catch (error) {
       console.error('❌ Background: Failed to get meeting status:', error);
@@ -192,7 +157,7 @@ class CrownieHederaBackground {
 
       return { success: true, message: 'Recording started' };
     } catch (error) {
-      console.error('Background: Failed to start recording:', error);
+      console.error('❌ Background: Failed to start recording:', error);
       throw error;
     }
   }
@@ -212,7 +177,7 @@ class CrownieHederaBackground {
 
       return { success: true, message: 'Recording stopped' };
     } catch (error) {
-      console.error('Background: Failed to stop recording:', error);
+      console.error('❌ Background: Failed to stop recording:', error);
       throw error;
     }
   }
@@ -237,7 +202,7 @@ class CrownieHederaBackground {
         tabId: tab.id
       };
     } catch (error) {
-      console.error('Background: Failed to start trade:', error);
+      console.error('❌ Background: Failed to start trade:', error);
       throw error;
     }
   }
@@ -256,7 +221,7 @@ class CrownieHederaBackground {
       
       return { success: true, message: 'Trade stopped' };
     } catch (error) {
-      console.error('Background: Failed to stop trade:', error);
+      console.error('❌ Background: Failed to stop trade:', error);
       throw error;
     }
   }
@@ -304,7 +269,7 @@ class CrownieHederaBackground {
       await StorageService.saveMeetingSecret(data.meetingId, data.secret);
       return { success: true, secret: data.secret };
     } catch (error) {
-      console.error('Background: Failed to save meeting secret:', error);
+      console.error('❌ Background: Failed to save meeting secret:', error);
       throw error;
     }
   }
@@ -319,24 +284,8 @@ class CrownieHederaBackground {
         return { success: false, error: 'No secret found' };
       }
     } catch (error) {
-      console.error('Background: Failed to get meeting secret:', error);
+      console.error('❌ Background: Failed to get meeting secret:', error);
       throw error;
-    }
-  }
-
-  private async importAccount(data: { privateKey: string, accountId: string, network?: 'testnet' | 'mainnet' }): Promise<any> {
-    try {
-      const result = await this.hederaAgent.importAccount(data.privateKey, data.accountId, data.network || 'testnet');
-      return {
-        success: true,
-        state: result
-      };
-    } catch (error) {
-      console.error('Background: Failed to import account:', error);
-      return { 
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to import account'
-      };
     }
   }
 
@@ -353,11 +302,11 @@ class CrownieHederaBackground {
 try {
   new CrownieHederaBackground();
 } catch (error) {
-  console.error('Background: Failed to initialize Crownie Hedera Background:', error);
+  console.error('❌ Background: Failed to initialize Crownie Hedera Background:', error);
 }
 
 browser.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
-    console.log('Crownie Hedera Extension installed');
+    console.log('🚀 Crownie Hedera Extension installed');
   }
 });

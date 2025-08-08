@@ -13,9 +13,10 @@ import {
   Globe,
   ArrowLeft,
 } from 'lucide-react'
-import { useAuthStore } from '../stores/authStore'
 import { useMeetingStore } from '../stores/meetingStore'
 import logo from '../assets/logo.png'
+import OnboardingView from './OnboardingView'
+import FundingGuide from './FundingGuide'
 import googleMeetIcon from '../assets/google_meet.png'
 import zoomIcon from '../assets/zoom.png'
 import teamsIcon from '../assets/teams.png'
@@ -31,26 +32,41 @@ interface MeetingState {
   isActive: boolean
 }
 
+interface AgentState {
+  status: 'initializing' | 'active' | 'idle' | 'error'
+  accountId?: string
+  balance?: number
+  isHealthy: boolean
+  errorMessage?: string
+}
+
 
 const PopupView: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'main' | 'orders' | 'history'>('main')
+  const [currentView, setCurrentView] = useState<'main' | 'orders' | 'history' | 'funding'>('main')
   const [meetingState, setMeetingState] = useState<MeetingState>({
     isRecording: false,
     duration: 0,
     isActive: false
   })
   const [meetingCode, setMeetingCode] = useState('')
+  const [agentState, setAgentState] = useState<AgentState>({
+    status: 'initializing',
+    isHealthy: false
+  })
+  const [showOnboarding, setShowOnboarding] = useState(false)
   
   // Orders state - now using chrome.storage.local
   const [orders, setOrders] = useState<Record<string, any>>({})
   const [activeOrderIds, setActiveOrderIds] = useState<string[]>([])
 
   useEffect(() => {
+    checkAgentStatus()
     checkMeetingStatus()
     loadOrders()
     
-    // Poll for meeting status changes and orders - reduced frequency to prevent spam
+    // Poll for agent status, meeting status, and orders
     const interval = setInterval(() => {
+      checkAgentStatus()
       checkMeetingStatus()
       loadOrders()
     }, 5000)
@@ -69,9 +85,41 @@ const PopupView: React.FC = () => {
     }
   }
 
+  const checkAgentStatus = async () => {
+    try {
+      const healthResponse = await browser.runtime.sendMessage({ action: 'HEALTH_CHECK' }) as any
+      const stateResponse = await browser.runtime.sendMessage({ action: 'GET_AGENT_STATE' }) as any
+      
+      if (healthResponse && stateResponse) {
+        setAgentState({
+          status: stateResponse.status || 'idle',
+          accountId: stateResponse.identity?.accountId,
+          balance: healthResponse.balance,
+          isHealthy: healthResponse.status === 'healthy',
+          errorMessage: stateResponse.errorMessage
+        })
+        
+        // Show onboarding only if agent is in error state AND we're not already showing onboarding
+        if ((stateResponse.status === 'error' || !stateResponse.identity) && agentState.status !== 'active') {
+          setShowOnboarding(true)
+        }
+      }
+    } catch (error) {
+      setAgentState(prev => ({ 
+        ...prev, 
+        status: 'error', 
+        isHealthy: false,
+        errorMessage: 'Failed to connect to agent'
+      }))
+      setShowOnboarding(true)
+    }
+  }
+
   const checkMeetingStatus = async () => {
     try {
       const response = await browser.runtime.sendMessage({ action: 'GET_MEETING_STATUS' }) as any
+      console.log('🔍 Popup: Meeting status response:', response)
+      
       if (response) {
         setMeetingState(prev => ({
           ...prev,
@@ -136,6 +184,44 @@ const PopupView: React.FC = () => {
   }
 
 
+
+  const handleOnboardingComplete = async () => {
+    setShowOnboarding(false)
+    
+    // Get the final agent state after successful initialization
+    try {
+      const stateResponse = await browser.runtime.sendMessage({ action: 'GET_AGENT_STATE' }) as any
+      const healthResponse = await browser.runtime.sendMessage({ action: 'HEALTH_CHECK' }) as any
+      
+      if (stateResponse?.identity) {
+        setAgentState({
+          status: stateResponse.status || 'active',
+          accountId: stateResponse.identity.accountId,
+          balance: healthResponse?.balance || 0,
+          isHealthy: healthResponse?.status === 'healthy',
+          errorMessage: undefined
+        })
+      }
+    } catch (error) {
+      console.error('Failed to get final agent state:', error)
+    }
+  }
+
+  // Show onboarding if needed
+  if (showOnboarding && agentState.status === 'error') {
+    return <OnboardingView onComplete={handleOnboardingComplete} />
+  }
+
+  // Show funding guide if requested
+  if (currentView === 'funding' && agentState.accountId) {
+    return (
+      <FundingGuide
+        accountId={agentState.accountId}
+        balance={agentState.balance || 0}
+        onClose={() => setCurrentView('main')}
+      />
+    )
+  }
 
   const mockMeetings = [
     {
@@ -318,7 +404,7 @@ const PopupView: React.FC = () => {
                             data: { meetingId: order.meetingId }
                           })
                           
-                          const secret = secretResponse?.secret || ''
+                          const secret = (secretResponse as any)?.secret || ''
                           
                           await browser.runtime.sendMessage({
                             action: 'OPEN_COMPLETE_ORDER',
@@ -429,7 +515,18 @@ const PopupView: React.FC = () => {
           <span className="font-medium">Crownie</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Ready</span>
+          <button
+            onClick={() => setCurrentView('funding')}
+            className="flex items-center gap-1 hover:bg-white/5 px-2 py-1 rounded"
+            disabled={!agentState.accountId}
+          >
+            <div className={`w-2 h-2 rounded-full ${agentState.isHealthy ? 'bg-green-400' : 'bg-red-400'}`}></div>
+            <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+              {agentState.status === 'active' ? 'Active' : 
+               agentState.status === 'initializing' ? 'Initializing' :
+               agentState.status === 'error' ? 'Error' : 'Idle'}
+            </span>
+          </button>
         </div>
       </div>
 
