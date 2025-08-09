@@ -7,9 +7,9 @@ export class MeetingService {
   private readonly PLATFORM_SELECTORS: PlatformSelector[] = [
     {
       platform: 'Google Meet',
-      urlPattern: /^https:\/\/meet\.google\.com\/[a-z-]+(?:\?.*)?$/,
+      urlPattern: /^https:\/\/meet\.google\.com\/[a-z\-0-9]+(?:\?.*)?$/i,
       meetingIdExtractor: (url: string) => {
-        const match = url.match(/meet\.google\.com\/([a-z-]+)/);
+        const match = url.match(/meet\.google\.com\/([a-z\-0-9]+)/i);
         return match ? match[1] : null;
       },
       titleExtractor: () => document.title || 'Google Meet',
@@ -18,7 +18,9 @@ export class MeetingService {
         '[data-meeting-id]',
         '.google-meet-button',
         '[aria-label*="microphone"]',
-        '[aria-label*="camera"]'
+        '[aria-label*="camera"]',
+        '[data-promo-anchor-id]',
+        '[jsname]'
       ]
     },
     {
@@ -86,14 +88,20 @@ export class MeetingService {
 
   detectMeeting(): MeetingInfo | null {
     const url = window.location.href;
+    console.log('🔍 MeetingService: Detecting meeting for URL:', url);
     
     for (const selector of this.PLATFORM_SELECTORS) {
+      console.log('🔍 MeetingService: Testing pattern for', selector.platform, ':', selector.urlPattern.test(url));
+      
       if (selector.urlPattern.test(url)) {
         const meetingId = selector.meetingIdExtractor(url);
+        console.log('🔍 MeetingService: Extracted meeting ID:', meetingId);
+        
         if (meetingId) {
           const isActive = this.isMeetingActive(selector);
+          console.log('🔍 MeetingService: Is meeting active:', isActive);
           
-          return {
+          const meetingInfo = {
             platform: selector.platform,
             isActive,
             meetingId,
@@ -102,10 +110,14 @@ export class MeetingService {
             startTime: Date.now(),
             participants: this.extractParticipants(selector.platform)
           };
+          
+          console.log('🔍 MeetingService: Detected meeting:', meetingInfo);
+          return meetingInfo;
         }
       }
     }
     
+    console.log('🔍 MeetingService: No meeting detected');
     return null;
   }
 

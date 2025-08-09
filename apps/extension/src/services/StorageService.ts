@@ -1,13 +1,16 @@
-import type { AgentIdentity, AgentConfig, MeetingSession, HCSTopic } from '../types';
+import type { AgentIdentity, AgentConfig, MeetingSession, HCSTopic, TranscriptionSession } from '../types';
 
 export class StorageService {
   private static readonly STORAGE_KEYS = {
     AGENT_IDENTITY: 'agent_identity',
     AGENT_CONFIG: 'agent_config', 
     MEETING_SESSIONS: 'meeting_sessions',
+    TRANSCRIPTION_SESSIONS: 'transcription_sessions',
     HCS_TOPICS: 'hcs_topics',
     MEETING_SECRETS: 'meeting_secrets',
-    LAST_HEARTBEAT: 'last_heartbeat'
+    LAST_HEARTBEAT: 'last_heartbeat',
+    AGENT_STATE: 'agent_state',
+    OPENAI_API_KEY: 'openaiApiKey'
   } as const;
 
   static async getAgentIdentity(): Promise<AgentIdentity | null> {
@@ -113,5 +116,64 @@ export class StorageService {
     if (secretKeys.length > 0) {
       await chrome.storage.local.remove(secretKeys);
     }
+  }
+
+  static async saveTranscriptionSession(session: TranscriptionSession): Promise<void> {
+    const sessions = await this.getAllTranscriptionSessions();
+    const existingIndex = sessions.findIndex(s => s.sessionId === session.sessionId);
+    
+    if (existingIndex >= 0) {
+      sessions[existingIndex] = session;
+    } else {
+      sessions.push(session);
+    }
+    
+    await chrome.storage.local.set({
+      [this.STORAGE_KEYS.TRANSCRIPTION_SESSIONS]: sessions
+    });
+  }
+
+  static async getTranscriptionSession(sessionId: string): Promise<TranscriptionSession | null> {
+    const sessions = await this.getAllTranscriptionSessions();
+    return sessions.find(session => session.sessionId === sessionId) || null;
+  }
+
+  static async getAllTranscriptionSessions(): Promise<TranscriptionSession[]> {
+    const result = await chrome.storage.local.get(this.STORAGE_KEYS.TRANSCRIPTION_SESSIONS);
+    return result[this.STORAGE_KEYS.TRANSCRIPTION_SESSIONS] || [];
+  }
+
+  static async deleteTranscriptionSession(sessionId: string): Promise<void> {
+    const sessions = await this.getAllTranscriptionSessions();
+    const filteredSessions = sessions.filter(session => session.sessionId !== sessionId);
+    
+    await chrome.storage.local.set({
+      [this.STORAGE_KEYS.TRANSCRIPTION_SESSIONS]: filteredSessions
+    });
+  }
+
+  static async saveAgentState(state: any): Promise<void> {
+    await chrome.storage.local.set({
+      [this.STORAGE_KEYS.AGENT_STATE]: state
+    });
+  }
+
+  static async getAgentState(): Promise<any | null> {
+    const result = await chrome.storage.local.get(this.STORAGE_KEYS.AGENT_STATE);
+    return result[this.STORAGE_KEYS.AGENT_STATE] || null;
+  }
+
+  static async getOpenAIApiKey(): Promise<string | null> {
+    const result = await chrome.storage.local.get(this.STORAGE_KEYS.OPENAI_API_KEY);
+    const apiKey = result[this.STORAGE_KEYS.OPENAI_API_KEY] || null;
+    console.log("💾 StorageService.getOpenAIApiKey():", apiKey ? "✅ Found" : "❌ Not found", "Key:", this.STORAGE_KEYS.OPENAI_API_KEY);
+    return apiKey;
+  }
+
+  static async saveOpenAIApiKey(apiKey: string): Promise<void> {
+    console.log("💾 StorageService.saveOpenAIApiKey():", `${apiKey.substring(0, 10)}...`, "Key:", this.STORAGE_KEYS.OPENAI_API_KEY);
+    await chrome.storage.local.set({
+      [this.STORAGE_KEYS.OPENAI_API_KEY]: apiKey
+    });
   }
 }

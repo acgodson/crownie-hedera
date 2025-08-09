@@ -5,6 +5,7 @@ export interface AgentIdentity {
   isInitialized: boolean;
   createdAt: number;
   lastActiveAt: number;
+  network?: "testnet" | "mainnet";
 }
 
 export interface AgentCapabilities {

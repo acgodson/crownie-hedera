@@ -1,11 +1,11 @@
-import { StorageService } from '../services/StorageService';
-import { MeetingService } from '../services/MeetingService';
-
 interface MeetingInfo {
   platform: string;
   isActive: boolean;
   meetingId: string;
   title: string;
+  url?: string;
+  startTime?: number;
+  participants?: string[];
 }
 
 interface OverlayState {
@@ -37,6 +37,9 @@ class CrownieOverlayManager {
 
     this.generateMeetingCode();
     this.createOverlay(meetingInfo);
+    setTimeout(() => {
+      this.syncRecordingState();
+    }, 100);
   }
 
   private generateMeetingCode() {
@@ -232,11 +235,26 @@ class CrownieOverlayManager {
         color: #ef4444 !important;
       }
       
+      #crownie-toggle-recording.error {
+        background: rgba(239, 68, 68, 0.2) !important;
+        border-color: rgba(239, 68, 68, 0.7) !important;
+        color: #ef4444 !important;
+        animation: shake 0.5s ease-in-out;
+      }
+      
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-2px); }
+        75% { transform: translateX(2px); }
+      }
+      
       #crownie-toggle-trade.trading {
         background: rgba(16, 185, 129, 0.15) !important;
         border-color: rgba(16, 185, 129, 0.5) !important;
         color: #10b981 !important;
       }
+
+
 
       #crownie-open-popup:hover {
         background: linear-gradient(135deg, #E98A48, #D17A3F) !important;
@@ -303,7 +321,9 @@ class CrownieOverlayManager {
       this.toggleTrade();
     });
 
-    const openBtn = this.overlay.querySelector("#crownie-open-popup");
+
+
+    const openBtn = this.overlay?.querySelector("#crownie-open-popup");
     openBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
       chrome.runtime.sendMessage({ action: "OPEN_POPUP" });
@@ -339,6 +359,14 @@ class CrownieOverlayManager {
 
     this.overlay.addEventListener("mouseleave", resetHideTimer);
     resetHideTimer();
+
+    const syncInterval = setInterval(() => {
+      if (this.overlay) {
+        this.syncRecordingState();
+      } else {
+        clearInterval(syncInterval);
+      }
+    }, 5000);
   }
 
   private getMeetingIdFromCurrentPage(): string | null {
@@ -395,6 +423,94 @@ class CrownieOverlayManager {
 
   updateRecordingState(isRecording: boolean, _duration: number) {
     this.state.isRecording = isRecording;
+
+    const recordingBtn = this.overlay?.querySelector(
+      "#crownie-toggle-recording"
+    );
+    if (recordingBtn) {
+      if (isRecording) {
+        recordingBtn.innerHTML = "⏹️ Stop Recording";
+        recordingBtn.classList.add("recording");
+      } else {
+        recordingBtn.innerHTML = "🎙️ Start Recording";
+        recordingBtn.classList.remove("recording");
+      }
+    }
+  }
+
+  async syncRecordingState() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "GET_MEETING_STATUS",
+      });
+      if (response && response.isRecording !== undefined) {
+        this.updateRecordingState(
+          response.isRecording,
+          response.recordingDuration || 0
+        );
+      }
+    } catch (error) {
+    }
+  }
+
+  private showRecordingError(errorMessage: string) {
+    const recordingBtn = this.overlay?.querySelector(
+      "#crownie-toggle-recording"
+    );
+    if (recordingBtn) {
+      recordingBtn.innerHTML = "❌ Error";
+      recordingBtn.classList.add("error");
+
+      this.showErrorNotification(errorMessage);
+
+      setTimeout(() => {
+        if (recordingBtn) {
+          recordingBtn.innerHTML = "🎙️ Start Recording";
+          recordingBtn.classList.remove("error");
+        }
+      }, 3000);
+    }
+  }
+
+  private showErrorNotification(message: string) {
+    const notification = document.createElement("div");
+    notification.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: rgba(239, 68, 68, 0.95);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      z-index: 10001;
+      max-width: 280px;
+      word-wrap: break-word;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease-out;
+    `;
+    notification.textContent = message;
+
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+      if (style.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+    }, 5000);
   }
 
   private toggleExpansion() {
@@ -472,14 +588,90 @@ class CrownieOverlayManager {
 
   private async toggleRecording() {
     try {
+      
       if (!this.state.isRecording) {
-        await chrome.runtime.sendMessage({ action: "START_RECORDING" });
-        this.startRecording();
+        
+        let agentStatus = await chrome.runtime.sendMessage({
+          action: "GET_AGENT_STATE",
+        });
+
+
+        if (agentStatus && agentStatus.status === "initializing") {
+          let attempts = 0;
+          const maxAttempts = 10;
+
+          while (attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            agentStatus = await chrome.runtime.sendMessage({
+              action: "GET_AGENT_STATE",
+            });
+
+
+            if (
+              agentStatus &&
+              agentStatus.status === "active" &&
+              agentStatus.isReady
+            ) {
+              break;
+            }
+            attempts++;
+          }
+        }
+
+        if (
+          !agentStatus ||
+          agentStatus.status !== "active" ||
+          !agentStatus.isReady
+        ) {
+          const errorMessage =
+            agentStatus?.errorMessage ||
+            (agentStatus?.status === "initializing"
+              ? "Agent is still initializing. Please wait a moment and try again."
+              : "Agent not initialized. Please check your account setup in the extension popup.");
+          throw new Error(`${errorMessage}`);
+        }
+
+        const response = await chrome.runtime.sendMessage({
+          action: "START_RECORDING",
+        });
+
+
+        if (response && response.success) {
+          this.startRecording();
+
+          await chrome.runtime.sendMessage({
+            action: "AUDIO_RECORDING",
+            subAction: "START",
+          });
+        } else {
+          const errorMsg = response?.error || "Failed to start recording";
+          throw new Error(errorMsg);
+        }
       } else {
-        await chrome.runtime.sendMessage({ action: "STOP_RECORDING" });
-        this.stopRecording();
+        const response = await chrome.runtime.sendMessage({
+          action: "STOP_RECORDING",
+        });
+
+
+        if (response && response.success) {
+          await chrome.runtime.sendMessage({
+            action: "AUDIO_RECORDING",
+            subAction: "STOP",
+          });
+
+          this.stopRecording();
+        } else {
+          const errorMsg = response?.error || "Failed to stop recording";
+          throw new Error(errorMsg);
+        }
       }
-    } catch (error) {}
+    } catch (error) {
+      this.showRecordingError(
+        error instanceof Error ? error.message : "Recording failed"
+      );
+
+      throw error;
+    }
   }
 
   private async toggleTrade() {
@@ -534,10 +726,10 @@ class CrownieOverlayManager {
     let hash = 0;
     for (let i = 0; i < secret.length; i++) {
       const char = secret.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
-    return `0x${Math.abs(hash).toString(16).padStart(8, '0')}`;
+    return `0x${Math.abs(hash).toString(16).padStart(8, "0")}`;
   }
 
   private startRecording() {
@@ -723,10 +915,174 @@ class CrownieOverlayManager {
       }
     } catch (error) {}
   }
+
+
+}
+
+class AudioBufferRecorder {
+  private mediaStream: MediaStream | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordingStartTimeMs = 0;
+  private lastChunkEndOffsetMs = 0;
+  private chunks: Array<{
+    startTimeMs: number;
+    endTimeMs: number;
+    blob: Blob;
+  }> = [];
+  private readonly chunkTimesliceMs = 1000;
+  private segmentTimer: NodeJS.Timeout | null = null;
+  private segmentDuration = 5000; // 5 seconds per segment
+  private segmentSequence = 0;
+
+  async start(): Promise<void> {
+    if (this.mediaRecorder && this.mediaRecorder.state === "recording") return;
+    
+    console.log('🎤 [AUDIO] Starting microphone recording...');
+    
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 44100,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    
+    console.log('✅ [AUDIO] Microphone access granted');
+    
+    this.mediaRecorder = new MediaRecorder(this.mediaStream);
+    this.chunks = [];
+    this.recordingStartTimeMs = Date.now();
+    this.lastChunkEndOffsetMs = 0;
+    this.segmentSequence = 0;
+
+    this.mediaRecorder.ondataavailable = (event: BlobEvent) => {
+      if (!event.data || event.data.size === 0) return;
+      const nowOffset = Date.now() - this.recordingStartTimeMs;
+      const startTimeMs = this.lastChunkEndOffsetMs;
+      const endTimeMs = nowOffset;
+      this.chunks.push({ startTimeMs, endTimeMs, blob: event.data });
+      this.lastChunkEndOffsetMs = endTimeMs;
+      
+      console.log('🎤 [AUDIO] Audio chunk captured:', event.data.size, 'bytes');
+    };
+
+    this.mediaRecorder.start(this.chunkTimesliceMs);
+    
+    // Start automatic segment processing
+    this.startSegmentProcessing();
+    
+    console.log('✅ [AUDIO] Recording started with automatic transcription');
+  }
+
+  async stop(): Promise<void> {
+    console.log('🎤 [AUDIO] Stopping recording...');
+    
+    // Stop segment processing
+    if (this.segmentTimer) {
+      clearInterval(this.segmentTimer);
+      this.segmentTimer = null;
+    }
+    
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      await new Promise<void>((resolve) => {
+        this.mediaRecorder!.onstop = () => resolve();
+        this.mediaRecorder!.stop();
+      });
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop());
+      this.mediaStream = null;
+    }
+    
+    console.log('✅ [AUDIO] Recording stopped');
+  }
+  
+  private startSegmentProcessing(): void {
+    this.segmentTimer = setInterval(async () => {
+      try {
+        const currentTime = Date.now();
+        const segmentStart = currentTime - this.segmentDuration;
+        const segmentEnd = currentTime;
+        
+        console.log('🎤 [AUDIO] Processing segment', this.segmentSequence);
+        
+        // Get audio segment as base64
+        const base64Audio = await this.captureSegmentBase64(
+          segmentStart - this.recordingStartTimeMs,
+          segmentEnd - this.recordingStartTimeMs
+        );
+        
+        if (base64Audio && base64Audio.length > 0) {
+          console.log('🎤 [AUDIO] Sending segment to background for transcription:', base64Audio.length, 'chars');
+          
+          // Send to background for transcription processing
+          chrome.runtime.sendMessage({
+            action: "AUDIO_RECORDING",
+            subAction: "CAPTURE_SEGMENT", 
+            data: {
+              audioData: base64Audio,
+              startTimeMs: segmentStart,
+              endTimeMs: segmentEnd,
+              sequence: this.segmentSequence
+            }
+          }).then((response) => {
+            if (response?.success) {
+              console.log('✅ [AUDIO] Segment processed successfully:', response.transcription);
+            } else {
+              console.error('❌ [AUDIO] Segment processing failed:', response?.error);
+            }
+          }).catch((error) => {
+            console.error('❌ [AUDIO] Failed to send segment:', error);
+          });
+          
+          this.segmentSequence++;
+        } else {
+          console.warn('⚠️ [AUDIO] No audio data in segment', this.segmentSequence);
+        }
+      } catch (error) {
+        console.error('❌ [AUDIO] Error processing segment:', error);
+      }
+    }, this.segmentDuration);
+  }
+
+  async captureSegmentBase64(
+    startTimeMs: number,
+    endTimeMs: number
+  ): Promise<string | null> {
+    if (!this.chunks.length) return null;
+    const selected: Blob[] = [];
+    for (const c of this.chunks) {
+      const overlaps = !(
+        c.endTimeMs <= startTimeMs || c.startTimeMs >= endTimeMs
+      );
+      if (overlaps) selected.push(c.blob);
+    }
+    if (selected.length === 0) return null;
+    const merged = new Blob(selected, {
+      type: this.chunks[0].blob.type || "audio/webm",
+    });
+    const base64 = await this.readBlobAsBase64(merged);
+    return base64;
+  }
+
+  private readBlobAsBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = typeof reader.result === "string" ? reader.result : "";
+        const commaIndex = result.indexOf(",");
+        resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+      };
+      reader.onerror = () => reject(new Error("Failed to read audio blob"));
+      reader.readAsDataURL(blob);
+    });
+  }
 }
 
 const overlayManager = new CrownieOverlayManager();
-const meetingService = new MeetingService();
+const audioRecorder = new AudioBufferRecorder();
 
 function detectPlatform(): string | null {
   const url = window.location.href;
@@ -793,25 +1149,147 @@ function isMeetingActive(): boolean {
 }
 
 function getMeetingInfo() {
-  const detectedMeeting = meetingService.detectMeeting();
+  const platform = detectPlatform();
+  const isActive = isMeetingActive();
   
-  if (detectedMeeting) {
-    return {
-      platform: detectedMeeting.platform,
-      isActive: detectedMeeting.isActive,
-      meetingId: detectedMeeting.meetingId,
-      title: detectedMeeting.title,
-      url: detectedMeeting.url,
-    };
-  }
-
-  return {
-    platform: null,
-    isActive: false,
+  const detectedMeeting: MeetingInfo = {
+    platform: platform || "Unknown",
+    isActive: isActive,
     meetingId: "",
-    title: "",
+    title: document.title || "",
     url: window.location.href,
   };
+
+  if (isActive) {
+    const url = window.location.href;
+    
+    if (url.includes("meet.google.com")) {
+      const match = url.match(/\/([a-z-]+)(?:\?|$)/);
+      detectedMeeting.meetingId = match ? match[1] : "";
+    } else if (url.includes("zoom.us")) {
+      const confno = new URLSearchParams(window.location.search).get("confno");
+      if (confno) {
+        detectedMeeting.meetingId = confno;
+      } else {
+        const pathMatch = url.match(/\/j\/(\d+)/);
+        detectedMeeting.meetingId = pathMatch ? pathMatch[1] : "";
+      }
+    } else if (url.includes("teams.microsoft.com")) {
+      const threadId = new URLSearchParams(window.location.search).get("threadId");
+      detectedMeeting.meetingId = threadId || "";
+    }
+  }
+
+  return detectedMeeting;
+}
+
+function handleAudioCapture(
+  data: { startTimeMs: number; endTimeMs: number },
+  sendResponse: (response: any) => void
+) {
+  (async () => {
+    try {
+      const base64 = await audioRecorder.captureSegmentBase64(
+        data.startTimeMs,
+        data.endTimeMs
+      );
+      if (!base64) {
+        sendResponse({
+          success: false,
+          error: "No audio available for requested window",
+        });
+        return;
+      }
+      sendResponse({ success: true, audioData: base64 });
+    } catch (e) {
+      sendResponse({ success: false, error: (e as Error).message });
+    }
+  })();
+}
+
+function handleAudioRecordingMessage(
+  message: any,
+  sendResponse: (response: any) => void
+) {
+  switch (message.subAction) {
+    case "START":
+      (async () => {
+        try {
+          await audioRecorder.start();
+          sendResponse({ success: true, message: "Audio recording started" });
+        } catch (error) {
+          sendResponse({ success: false, error: (error as Error).message });
+        }
+      })();
+      break;
+
+    case "STOP":
+      (async () => {
+        try {
+          await audioRecorder.stop();
+          sendResponse({ success: true, message: "Audio recording stopped" });
+        } catch (error) {
+          sendResponse({ success: false, error: (error as Error).message });
+        }
+      })();
+      break;
+
+    case "CAPTURE_SEGMENT":
+      handleAudioCapture(message.data, sendResponse);
+      break;
+
+    default:
+      sendResponse({
+        success: false,
+        error: `Unknown audio recording sub-action: ${message.subAction}`,
+      });
+  }
+}
+
+function handleProxyCreateTopic(data: any, sendResponse: (response: any) => void) {
+  (async () => {
+    try {
+      console.log('🔧 ContentScript: Starting direct topic creation...');
+      
+      const agentStateResponse = await chrome.runtime.sendMessage({ action: "GET_AGENT_STATE" });
+      console.log('🔧 ContentScript: Agent state response:', agentStateResponse);
+      
+      if (!agentStateResponse?.identity) {
+        throw new Error("No agent identity found");
+      }
+
+      console.log('🔧 ContentScript: Importing DirectHederaService...');
+      const { DirectHederaService } = await import('../services/DirectHederaService');
+      console.log('✅ ContentScript: DirectHederaService imported successfully');
+
+      console.log('🔧 ContentScript: Creating DirectHederaService instance...');
+      const directService = new DirectHederaService(agentStateResponse.identity);
+      
+      const memo = data.memo || `Crownie meeting topic - ${new Date().toISOString()}`;
+      console.log('🔧 ContentScript: Creating topic with memo:', memo);
+      
+      const topicId = await directService.createTopic(memo);
+      
+      console.log('✅ ContentScript: Topic created successfully with ID:', topicId);
+      
+      directService.close();
+      
+      sendResponse({ 
+        success: true, 
+        result: { 
+          topicId: topicId,
+          status: "success"
+        } 
+      });
+
+    } catch (error) {
+      console.error('❌ ContentScript: Error in direct topic creation:', error);
+      sendResponse({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Unknown error" 
+      });
+    }
+  })();
 }
 
 chrome.runtime.onMessage.addListener(
@@ -833,12 +1311,8 @@ chrome.runtime.onMessage.addListener(
         });
         break;
 
-      case "START_RECORDING":
-        sendResponse({ success: true, message: "Recording started" });
-        break;
-
-      case "STOP_RECORDING":
-        sendResponse({ success: true, message: "Recording stopped" });
+      case "CAPTURE_AUDIO_SEGMENT":
+        handleAudioCapture(message.data, sendResponse);
         break;
 
       case "START_TRADE":
@@ -872,6 +1346,22 @@ chrome.runtime.onMessage.addListener(
 
       case "ORDER_COMPLETED":
         handleOrderCompleted(message.data);
+        sendResponse({ success: true });
+        break;
+
+      case "AUDIO_RECORDING":
+        handleAudioRecordingMessage(message, sendResponse);
+        break;
+
+      case "PROXY_CREATE_TOPIC":
+        handleProxyCreateTopic(message.data, sendResponse);
+        break;
+
+      case "UPDATE_RECORDING_STATE":
+        overlayManager.updateRecordingState(
+          message.data.isRecording,
+          message.data.duration || 0
+        );
         sendResponse({ success: true });
         break;
 
@@ -1051,11 +1541,14 @@ function initializeContentScript() {
   }
 
   const meetingInfo = getMeetingInfo();
-  
-  console.log('🔍 Content: Meeting detection result:', meetingInfo);
+  console.log("🔍 ContentScript: Meeting detection result:", meetingInfo);
 
   if (meetingInfo.platform && meetingInfo.isActive) {
-    if (!lastMeetingState.isActive || lastMeetingState.meetingId !== meetingInfo.meetingId) {
+    if (
+      !lastMeetingState.isActive ||
+      lastMeetingState.meetingId !== meetingInfo.meetingId
+    ) {
+      console.log("🔍 ContentScript: New meeting detected, showing overlay and notifying background");
       overlayManager.showOverlay({
         platform: meetingInfo.platform,
         isActive: meetingInfo.isActive,
@@ -1068,19 +1561,30 @@ function initializeContentScript() {
           action: "MEETING_DETECTED",
           data: meetingInfo,
         })
-        .catch(() => {});
+        .then(response => {
+          console.log("🔍 ContentScript: MEETING_DETECTED response:", response);
+        })
+        .catch(error => {
+          console.error("🔍 ContentScript: Failed to send MEETING_DETECTED:", error);
+        });
     }
-    
+
     lastMeetingState = { isActive: true, meetingId: meetingInfo.meetingId };
   } else {
     if (lastMeetingState.isActive) {
+      console.log("🔍 ContentScript: Meeting ended, notifying background");
       chrome.runtime
         .sendMessage({
           action: "MEETING_ENDED",
         })
-        .catch(() => {});
+        .then(response => {
+          console.log("🔍 ContentScript: MEETING_ENDED response:", response);
+        })
+        .catch(error => {
+          console.error("🔍 ContentScript: Failed to send MEETING_ENDED:", error);
+        });
     }
-    
+
     overlayManager.hideOverlay();
     lastMeetingState = { isActive: false, meetingId: "" };
   }

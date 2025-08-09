@@ -1,22 +1,11 @@
-import {
-  Client,
-  PrivateKey,
-  AccountId,
-  AccountCreateTransaction,
-  Hbar,
-  AccountBalanceQuery,
-} from "@hashgraph/sdk";
-import {
-  HederaLangchainToolkit,
-  coreConsensusPlugin,
-  coreQueriesPlugin,
-} from "hedera-agent-kit";
+import { Client, PrivateKey, AccountId, AccountBalanceQuery } from "@hashgraph/sdk";
+import { HederaLangchainToolkit, coreConsensusPlugin } from "hedera-agent-kit";
 import type { AgentIdentity, AgentConfig, HederaNetwork } from "../types";
 import { StorageService } from "../services/StorageService";
 
 export class IdentityManager {
-  private client: Client | null = null;
-  private toolkit: HederaLangchainToolkit | null = null;
+  private client: any | null = null;
+  private toolkit: any | null = null;
   private identity: AgentIdentity | null = null;
 
   private readonly NETWORKS: Record<string, HederaNetwork> = {
@@ -36,22 +25,37 @@ export class IdentityManager {
 
   async initialize(config?: AgentConfig): Promise<AgentIdentity> {
     try {
+      console.log("🔧 IdentityManager: Starting initialization...");
+
       let identity = await StorageService.getAgentIdentity();
+      console.log("🔧 IdentityManager: Retrieved identity from storage:", {
+        hasIdentity: !!identity,
+        isInitialized: identity?.isInitialized,
+        accountId: identity?.accountId
+      });
 
       if (identity && identity.isInitialized) {
         this.identity = identity;
-        await this.initializeClient(identity, config?.network || "testnet");
+        
+        try {
+          await this.initializeClient(identity, config?.network || "testnet");
+          console.log("✅ IdentityManager: Client initialized successfully");
+        } catch (clientError) {
+          console.error("❌ IdentityManager: Client initialization failed:", clientError);
+          // Don't fail the entire initialization if client setup fails
+          // The identity is still valid, just the client needs to be retried
+        }
+        
         await this.updateLastActive();
         return identity;
       }
 
-      throw new Error("No identity found. Please import a private key first.");
+      throw new Error("No identity found. Please import a private key and set up your account in the extension popup first.");
     } catch (error) {
-      console.error("Failed to initialize agent identity:", error);
+      console.error("❌ IdentityManager: Failed to initialize:", error);
       throw error;
     }
   }
-
 
   async importWithAccountId(
     privateKeyString: string,
@@ -63,8 +67,9 @@ export class IdentityManager {
     }
 
     try {
+
       const keyString = privateKeyString.trim();
-      let privateKey: PrivateKey;
+      let privateKey: any;
 
       if (keyString.length === 64 && /^[a-fA-F0-9]{64}$/.test(keyString)) {
         privateKey = PrivateKey.fromStringED25519(keyString);
@@ -93,7 +98,6 @@ export class IdentityManager {
       }
 
       const publicKey = privateKey.publicKey;
-      
       const accountIdObj = AccountId.fromString(accountId.trim());
       const finalAccountId = accountIdObj.toString();
 
@@ -104,15 +108,17 @@ export class IdentityManager {
         isInitialized: true,
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
+        network: network,
       };
 
-      await this.initializeClient(identity, network);
       await StorageService.saveAgentIdentity(identity);
-
       this.identity = identity;
+      await this.initializeClient(identity, network);
+
       return identity;
     } catch (error) {
-      throw new Error(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Failed to import account with ID:", error);
+      throw error;
     }
   }
 
@@ -125,62 +131,42 @@ export class IdentityManager {
     }
 
     try {
-      this.client =
-        network === "testnet" ? Client.forTestnet() : Client.forMainnet();
 
+      this.client = network === "testnet" ? Client.forTestnet() : Client.forMainnet();
       const privateKey = PrivateKey.fromStringDer(identity.privateKey);
-
       this.client.setOperator(identity.accountId, privateKey);
 
       this.toolkit = new HederaLangchainToolkit({
         client: this.client,
         configuration: {
-          plugins: [coreConsensusPlugin, coreQueriesPlugin],
+          plugins: [coreConsensusPlugin],
+          context: {
+            accountId: identity.accountId,
+          },
         },
       });
+
+      const tools = this.toolkit.getTools();
+      const createTopicTool = tools.find((t: any) => t.name === 'create_topic_tool');
+      const submitMessageTool = tools.find((t: any) => t.name === 'submit_topic_message_tool');
+      
+      if (tools.length === 0 || !createTopicTool || !submitMessageTool) {
+        throw new Error("Missing required Hedera tools");
+      }
     } catch (error) {
       throw new Error(`Client init failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-
-  async getIdentity(): Promise<AgentIdentity | null> {
-    if (!this.identity) {
-      this.identity = await StorageService.getAgentIdentity();
-    }
-    return this.identity;
-  }
-
-  getClient(): Client | null {
-    return this.client;
-  }
-
-  getToolkit(): HederaLangchainToolkit | null {
-    return this.toolkit;
-  }
-
-  async updateLastActive(): Promise<void> {
-    if (this.identity) {
-      this.identity.lastActiveAt = Date.now();
-      await StorageService.saveAgentIdentity(this.identity);
-    }
-  }
-
   async isHealthy(): Promise<boolean> {
-    try {
-      if (!this.client || !this.identity) {
-        return false;
-      }
-
-      if (
-        this.identity.isInitialized &&
-        this.identity.accountId &&
-        this.identity.privateKey
-      ) {
-        return true;
-      }
-
+    if (!this.client || !this.identity) {
       return false;
+    }
+
+    try {
+      const balanceQuery = new AccountBalanceQuery().setAccountId(this.identity.accountId);
+      const balance = await balanceQuery.execute(this.client);
+      return balance.hbars.toTinybars().toNumber() > 0;
     } catch (error) {
       return false;
     }
@@ -188,28 +174,43 @@ export class IdentityManager {
 
   async getAccountBalance(): Promise<number> {
     if (!this.client || !this.identity) {
-      throw new Error("Client not initialized");
+      return 0;
     }
 
     try {
-      const query = new AccountBalanceQuery().setAccountId(
-        this.identity.accountId
-      );
-      const balance = await query.execute(this.client);
+      const balanceQuery = new AccountBalanceQuery().setAccountId(this.identity.accountId);
+      const balance = await balanceQuery.execute(this.client);
       return balance.hbars.toTinybars().toNumber();
     } catch (error) {
       return 0;
     }
   }
 
-  async resetIdentity(): Promise<void> {
-    this.identity = null;
-    this.client = null;
-    this.toolkit = null;
-    await StorageService.clearAgentData();
+  private async updateLastActive(): Promise<void> {
+    if (this.identity) {
+      this.identity.lastActiveAt = Date.now();
+      await StorageService.saveAgentIdentity(this.identity);
+    }
   }
 
-  getNetworkConfig(network: "testnet" | "mainnet"): HederaNetwork {
-    return this.NETWORKS[network];
+  getClient(): any | null {
+    return this.client;
+  }
+
+  getToolkit(): any | null {
+    return this.toolkit;
+  }
+
+  getIdentity(): AgentIdentity | null {
+    return this.identity;
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.client) {
+      this.client.close?.();
+      this.client = null;
+    }
+    this.toolkit = null;
+    this.identity = null;
   }
 }

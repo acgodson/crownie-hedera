@@ -22,7 +22,9 @@
     "https://*.webex.com/*",
     "https://*.discord.com/*",
     "http://localhost:3000/*",
-    "https://crownie-swap.vercel.app/*"
+    "https://crownie-swap.vercel.app/*",
+    "https://api.openai.com/*",
+    "https://us-central1-crownie-7c88e.cloudfunctions.net/*"
   ],
   "background": {
     "service_worker": "background.js",
