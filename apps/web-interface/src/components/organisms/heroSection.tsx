@@ -36,7 +36,7 @@ const HeroSection = () => {
                 <div className="w-full backdrop-blur-md bg-black bg-opacity-5 border-t border-b border-white border-opacity-20 py-8">
                     <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                         <a 
-                            href="https://github.com/acgodson/crownie-etherlink/releases" 
+                            href="https://github.com/acgodson/crownie-hedera/releases" 
                             target="_blank" 
                             rel="noopener noreferrer"
                             className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg hover:bg-crownie-secondary transition-colors inline-block"

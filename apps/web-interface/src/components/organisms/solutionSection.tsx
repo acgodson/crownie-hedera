@@ -156,16 +156,21 @@ const SolutionSection = () => (
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-12">
                     <a 
-                        href="https://github.com/acgodson/crownie-etherlink/releases" 
+                        href="https://github.com/acgodson/crownie-hedera/releases" 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg hover:bg-crownie-secondary transition-colors inline-block"
                     >
                         Try Crownie
                     </a>
-                    <button className="px-8 py-3 border border-crownie-primary text-white rounded-lg hover:bg-crownie-primary hover:bg-opacity-10 transition-colors flex items-center gap-2">
+                    <a 
+                        href="https://www.youtube.com/watch?v=dPQjQVvcMT4&list=PLpWkBdRDSgGSKXfUTRNhw6e282ALdatLi&index=1"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-8 py-3 border border-crownie-primary text-white rounded-lg hover:bg-crownie-primary hover:bg-opacity-10 transition-colors flex items-center gap-2"
+                    >
                         Watch Demo <span className="text-crownie-primary">▶</span>
-                    </button>
+                    </a>
                 </div>
             </div>
         </div>
