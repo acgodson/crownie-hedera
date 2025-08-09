@@ -12,6 +12,16 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, projectRoot, "");
 
   return {
+    resolve: {
+      alias: {
+        // Node.js polyfills for browser environment
+        util: 'util',
+        crypto: 'crypto-browserify',
+        stream: 'stream-browserify',
+        buffer: 'buffer',
+        process: 'process/browser',
+      }
+    },
     plugins: [
       react(),
 
@@ -38,7 +48,13 @@ export default defineConfig(({ mode }) => {
         }),
       ],
     ],
-    define: {},
+    define: {
+      // Provide Node.js globals for browser environment
+      'global': 'globalThis',
+      'process.env': '{}',
+      'process.platform': '"browser"',
+      'process.version': '"v16.0.0"',
+    },
     build: {
       outDir: "dist",
       emptyOutDir: true,
@@ -67,6 +83,8 @@ export default defineConfig(({ mode }) => {
       esbuildOptions: {
         define: {
           global: "globalThis",
+          process: '{"env": {}, "platform": "browser", "version": "v16.0.0"}',
+          Buffer: "null",
         },
       },
     },

@@ -1,6 +1,6 @@
 {
   "name": "crownie-extension",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Chrome extension for capturing and transcribing meetings into swap intents",
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "build:extension": "vite build --mode extension && vite build --config vite.content.config.ts",
     "preview": "vite preview",
     "package": "npm run build:extension && node scripts/package-extension.js",
-    "release": "npm run package && node scripts/create-release.js"
+    "release": "npm run package && node scripts/create-release.js",
+    "test:agent": "node test-agent.js"
   },
   "keywords": [
     "chrome-extension",
@@ -22,13 +23,18 @@
   "license": "MIT",
   "dependencies": {
     "@hashgraph/sdk": "^2.70.0",
+    "@langchain/core": "^0.3.68",
+    "@langchain/openai": "^0.6.6",
+    "@peculiar/webcrypto": "^1.5.0",
     "archiver": "^7.0.1",
     "hedera-agent-kit": "^3.0.7",
+    "langchain": "^0.3.30",
     "lucide-react": "^0.469.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.1.0",
     "webextension-polyfill": "^0.12.0",
+    "zod": "3.23.8",
     "zustand": "^5.0.6"
   },
   "devDependencies": {
@@ -38,10 +44,15 @@
     "@types/webextension-polyfill": "^0.12.1",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.21",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "postcss": "^8.5.6",
+    "process": "^0.11.10",
     "rollup-plugin-copy": "^3.5.0",
+    "stream-browserify": "^3.0.0",
     "tailwindcss": "^3.4.0",
     "typescript": "~5.8.3",
+    "util": "^0.12.5",
     "vite": "^7.0.4"
   }
 }
