@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
+import 'hedera-token-service/HederaTokenService.sol';
 
-/**
- * @title EscrowMaker - Maker side escrow for intent-based DEX
- * @notice Holds maker's tokens with hash-time lock mechanism
- * @dev Deployed by Resolver for each order's maker side
- */
-contract EscrowMaker is ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
+contract HederaEscrowMaker is ReentrancyGuard, HederaTokenService {
     struct OrderData {
         address maker;
         address token;
@@ -32,6 +24,7 @@ contract EscrowMaker is ReentrancyGuard {
     event MakerDeposited(bytes32 indexed orderHash, uint256 amount);
     event TokensClaimed(bytes32 indexed orderHash, address indexed taker, bytes32 secret);
     event OrderCancelled(bytes32 indexed orderHash);
+    event ResponseCode(int responseCode);
 
     error UnauthorizedCaller();
     error OrderExpired();
@@ -41,6 +34,7 @@ contract EscrowMaker is ReentrancyGuard {
     error OrderAlreadyCompleted();
     error OrderAlreadyCancelled();
     error OrderNotInitialized();
+    error HederaTokenServiceFailed(int responseCode);
 
     modifier onlyResolver() {
         if (msg.sender != resolver) revert UnauthorizedCaller();
@@ -84,7 +78,9 @@ contract EscrowMaker is ReentrancyGuard {
             taker: address(0)
         });
 
-        IERC20(token).safeTransferFrom(maker, address(this), amount);
+        int responseCode = HederaTokenService.transferToken(token, maker, address(this), int64(int(amount)));
+        _handleHederaResponse(responseCode);
+
         orderData.deposited = true;
 
         emit MakerDeposited(_orderHash, amount);
@@ -103,7 +99,14 @@ contract EscrowMaker is ReentrancyGuard {
         if (block.timestamp >= orderData.timelock) revert OrderExpired();
 
         orderData.completed = true;
-        IERC20(orderData.token).safeTransfer(orderData.taker, orderData.amount);
+
+        int responseCode = HederaTokenService.transferToken(
+            orderData.token,
+            address(this),
+            orderData.taker,
+            int64(int(orderData.amount))
+        );
+        _handleHederaResponse(responseCode);
 
         emit TokensClaimed(orderHash, orderData.taker, secret);
     }
@@ -115,12 +118,26 @@ contract EscrowMaker is ReentrancyGuard {
         if (block.timestamp < orderData.timelock) revert OrderNotExpired();
 
         orderData.cancelled = true;
-        IERC20(orderData.token).safeTransfer(orderData.maker, orderData.amount);
+
+        int responseCode = HederaTokenService.transferToken(
+            orderData.token,
+            address(this),
+            orderData.maker,
+            int64(int(orderData.amount))
+        );
+        _handleHederaResponse(responseCode);
 
         emit OrderCancelled(orderHash);
     }
 
     function getOrderData() external view returns (OrderData memory) {
         return orderData;
+    }
+
+    function _handleHederaResponse(int responseCode) internal {
+        emit ResponseCode(responseCode);
+        if (responseCode != HederaResponseCodes.SUCCESS) {
+            revert HederaTokenServiceFailed(responseCode);
+        }
     }
 }

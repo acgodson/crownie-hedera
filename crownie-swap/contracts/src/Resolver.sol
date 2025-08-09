@@ -4,15 +4,11 @@ pragma solidity 0.8.23;
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import '@openzeppelin/contracts/utils/Create2.sol';
-import './EscrowMaker.sol';
-import './EscrowTaker.sol';
+import 'hedera-token-service/HederaTokenService.sol';
+import './HederaEscrowMaker.sol';
+import './HederaEscrowTaker.sol';
 
-/**
- * @title Resolver - Intent-based DEX Resolver
- * @notice Main interface for users to create and manage token swaps using dual escrows
- * @dev Deploys and manages dual escrow contracts (maker + taker) for each order
- */
-contract Resolver is Ownable, ReentrancyGuard {
+contract HederaResolver is Ownable, ReentrancyGuard, HederaTokenService {
     struct Order {
         address maker;
         address makerToken;
@@ -57,6 +53,8 @@ contract Resolver is Ownable, ReentrancyGuard {
 
     event OrderCancelled(bytes32 indexed orderHash);
 
+    event ResponseCode(int responseCode);
+
     error OrderAlreadyExists();
     error OrderNotFound();
     error OrderAlreadyFilled();
@@ -67,6 +65,7 @@ contract Resolver is Ownable, ReentrancyGuard {
     error UnauthorizedCaller();
     error InsufficientFee();
     error InvalidParameters();
+    error HederaTokenServiceFailed(int responseCode);
 
     constructor(address initialOwner, uint256 creationFee) Ownable(initialOwner) {
         CREATION_FEE = creationFee;
@@ -87,7 +86,7 @@ contract Resolver is Ownable, ReentrancyGuard {
 
         (makerEscrow, takerEscrow) = _deployDualEscrows(orderHash, order.salt);
 
-        EscrowMaker(makerEscrow).initialize(
+        HederaEscrowMaker(makerEscrow).initialize(
             orderHash,
             order.maker,
             order.makerToken,
@@ -128,9 +127,9 @@ contract Resolver is Ownable, ReentrancyGuard {
         orderStatus.taker = msg.sender;
         orderStatus.filled = true;
 
-        EscrowMaker(orderStatus.makerEscrow).setTaker(msg.sender);
+        HederaEscrowMaker(orderStatus.makerEscrow).setTaker(msg.sender);
 
-        EscrowTaker(orderStatus.takerEscrow).initialize(
+        HederaEscrowTaker(orderStatus.takerEscrow).initialize(
             orderHash,
             msg.sender,
             order.takerToken,
@@ -153,8 +152,8 @@ contract Resolver is Ownable, ReentrancyGuard {
 
         orderStatus.completed = true;
 
-        EscrowTaker(orderStatus.takerEscrow).claimTokens(secret);
-        EscrowMaker(orderStatus.makerEscrow).claimTokens(secret);
+        HederaEscrowTaker(orderStatus.takerEscrow).claimTokens(secret);
+        HederaEscrowMaker(orderStatus.makerEscrow).claimTokens(secret);
 
         emit SwapCompleted(orderHash, secret);
     }
@@ -173,10 +172,10 @@ contract Resolver is Ownable, ReentrancyGuard {
 
         orderStatus.cancelled = true;
 
-        EscrowMaker(orderStatus.makerEscrow).cancel();
+        HederaEscrowMaker(orderStatus.makerEscrow).cancel();
 
         if (orderStatus.filled) {
-            EscrowTaker(orderStatus.takerEscrow).refund();
+            HederaEscrowTaker(orderStatus.takerEscrow).refund();
         }
 
         emit OrderCancelled(orderHash);
@@ -195,8 +194,8 @@ contract Resolver is Ownable, ReentrancyGuard {
         bytes32 orderHash,
         bytes32 salt
     ) external view returns (address makerEscrow, address takerEscrow) {
-        bytes32 makerBytecodeHash = keccak256(type(EscrowMaker).creationCode);
-        bytes32 takerBytecodeHash = keccak256(type(EscrowTaker).creationCode);
+        bytes32 makerBytecodeHash = keccak256(type(HederaEscrowMaker).creationCode);
+        bytes32 takerBytecodeHash = keccak256(type(HederaEscrowTaker).creationCode);
         bytes32 makerSalt = keccak256(abi.encodePacked(orderHash, salt, 'maker'));
         bytes32 takerSalt = keccak256(abi.encodePacked(orderHash, salt, 'taker'));
 
@@ -235,7 +234,14 @@ contract Resolver is Ownable, ReentrancyGuard {
         bytes32 makerSalt = keccak256(abi.encodePacked(orderHash, salt, 'maker'));
         bytes32 takerSalt = keccak256(abi.encodePacked(orderHash, salt, 'taker'));
 
-        makerEscrow = address(new EscrowMaker{salt: makerSalt}());
-        takerEscrow = address(new EscrowTaker{salt: takerSalt}());
+        makerEscrow = address(new HederaEscrowMaker{salt: makerSalt}());
+        takerEscrow = address(new HederaEscrowTaker{salt: takerSalt}());
+    }
+
+    function _handleHederaResponse(int responseCode) internal {
+        emit ResponseCode(responseCode);
+        if (responseCode != HederaResponseCodes.SUCCESS) {
+            revert HederaTokenServiceFailed(responseCode);
+        }
     }
 }

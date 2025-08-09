@@ -12,7 +12,7 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) => {
   const [privateKey, setPrivateKey] = useState('302e020100300506032b657004220420320cd6158cc0b2dd41d3013e92b108b679ed23853330fb4ba0ad1dcb162b1718')
   const [accountId, setAccountId] = useState('0.0.4691111')
   const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet')
-  const [openaiApiKey, setOpenaiApiKey] = useState('sk-V-gePzPj_nZHirwLQel-OUkMWyldqf1_ZRqri1rwm8T3BlbkFJeWgUULHC2QykUnFyyhtq3bMukSXozLzFDUhDEPhewA')
+  const [openaiApiKey, setOpenaiApiKey] = useState('sk-YSlaebRWGZY_7TB4YpJaf81KKZKa94wpER-HyaRO0lT3BlbkFJlkCTXUfBUj6Kdu-9vNkk2gh2AvhtQRp1EPBAZIkmQA')
   const [initStatus, setInitStatus] = useState<{
     success: boolean
     message: string

@@ -344,17 +344,50 @@ class CrownieHederaBackground {
       }
 
       const activeSessions = await this.hederaAgent.getActiveSessions();
+      
+      let session;
       if (!sessionId) {
+        // Try to find existing session
         const latestSession = activeSessions[activeSessions.length - 1];
-        if (!latestSession) {
-          throw new Error("No active session found");
+        if (latestSession) {
+          session = latestSession;
+          sessionId = session.sessionId;
         }
-        sessionId = latestSession.sessionId;
+      } else {
+        session = activeSessions.find((s) => s.sessionId === sessionId);
       }
 
-      const session = activeSessions.find((s) => s.sessionId === sessionId);
+      // If no session exists, create one using current meeting info
+      if (!session && this.currentMeetingInfo) {
+        console.log("🔧 [DEMO MODE] Creating new session for recording...");
+        sessionId = `meeting_${this.currentMeetingInfo.meetingId}_${Date.now()}`;
+        
+        const newSession = {
+          sessionId,
+          meetingInfo: {
+            platform: this.currentMeetingInfo.platform,
+            isActive: this.currentMeetingInfo.isActive,
+            meetingId: this.currentMeetingInfo.meetingId,
+            title: this.currentMeetingInfo.title,
+            startTime: Date.now(),
+            url: this.currentMeetingInfo.url
+          },
+          hcsTopicId: "",
+          isRecording: false,
+          recordingStartTime: null,
+          recordingDuration: 0,
+          transcriptionEnabled: false,
+          status: "detected" as const,
+          createdAt: Date.now(),
+        };
+        
+        await this.hederaAgent.saveMeetingSession(newSession);
+        session = newSession;
+        console.log("✅ [DEMO MODE] Session created:", sessionId);
+      }
+
       if (!session) {
-        throw new Error("Session not found");
+        throw new Error("No active meeting found - please join a meeting first");
       }
 
       if (session.isRecording) {
@@ -375,6 +408,13 @@ class CrownieHederaBackground {
       });
 
       await this.hederaAgent.startRecording(sessionId);
+
+      // Trigger content script to start audio recording
+      console.log("🔧 [DEMO MODE] Starting content script audio recording...");
+      this.notifyContentScripts({
+        action: "AUDIO_RECORDING",
+        subAction: "START"
+      });
 
       this.notifyContentScripts({
         action: "UPDATE_RECORDING_STATE",
@@ -432,6 +472,13 @@ class CrownieHederaBackground {
         endTime: Date.now(),
         totalSegments: activeSession.recordingDuration || 0,
         totalWords: 0,
+      });
+
+      // Stop content script audio recording
+      console.log("🔧 [DEMO MODE] Stopping content script audio recording...");
+      this.notifyContentScripts({
+        action: "AUDIO_RECORDING", 
+        subAction: "STOP"
       });
 
       // Notify content scripts of recording state change

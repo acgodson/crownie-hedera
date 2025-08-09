@@ -57,6 +57,7 @@ const PopupView: React.FC = () => {
   const [orders, setOrders] = useState<Record<string, any>>({})
   const [activeOrderIds, setActiveOrderIds] = useState<string[]>([])
   const [realMeetings, setRealMeetings] = useState<any[]>([])
+  const [isPaused, setIsPaused] = useState(false)
 
   // All useEffect hooks must be at the top level
   useEffect(() => {
@@ -226,11 +227,70 @@ const PopupView: React.FC = () => {
       const response = await browser.runtime.sendMessage({ action: 'STOP_RECORDING' }) as any
       if (response && response.success) {
         setMeetingState(prev => ({ ...prev, isRecording: false, duration: 0 }))
+        setIsPaused(false)
       } else {
         console.error('Failed to stop recording:', response?.error)
       }
     } catch (error) {
       console.error('Failed to stop recording:', error)
+    }
+  }
+
+  const handlePauseRecording = async () => {
+    try {
+      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
+        if (tabs[0]?.id) {
+          const response = await browser.tabs.sendMessage(tabs[0].id, {
+            action: "AUDIO_RECORDING",
+            subAction: "PAUSE"
+          }) as any
+          if (response?.success) {
+            setIsPaused(true)
+            console.log('⏸️ Recording paused')
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Failed to pause recording:', error)
+    }
+  }
+
+  const handleResumeRecording = async () => {
+    try {
+      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
+        if (tabs[0]?.id) {
+          const response = await browser.tabs.sendMessage(tabs[0].id, {
+            action: "AUDIO_RECORDING", 
+            subAction: "RESUME"
+          }) as any
+          if (response?.success) {
+            setIsPaused(false)
+            console.log('▶️ Recording resumed')
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Failed to resume recording:', error)
+    }
+  }
+
+  const handlePlayback = async () => {
+    try {
+      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
+        if (tabs[0]?.id) {
+          const response = await browser.tabs.sendMessage(tabs[0].id, {
+            action: "AUDIO_RECORDING",
+            subAction: "PLAYBACK"
+          }) as any
+          if (response?.success) {
+            console.log('🔊 Playing back recorded audio')
+          } else {
+            console.error('Playback failed:', response?.error)
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Failed to play audio:', error)
     }
   }
 

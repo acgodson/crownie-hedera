@@ -1,1 +1,2 @@
 @openzeppelin/=contracts/lib/openzeppelin-contracts/
+hedera-token-service/=contracts/lib/hedera-smart-contracts/contracts/system-contracts/hedera-token-service/

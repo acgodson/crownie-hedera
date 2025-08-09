@@ -933,6 +933,8 @@ class AudioBufferRecorder {
   private segmentTimer: NodeJS.Timeout | null = null;
   private segmentDuration = 5000; // 5 seconds per segment
   private segmentSequence = 0;
+  private isPaused = false;
+  private recordedBlob: Blob | null = null;
 
   async start(): Promise<void> {
     if (this.mediaRecorder && this.mediaRecorder.state === "recording") return;
@@ -1001,6 +1003,11 @@ class AudioBufferRecorder {
   
   private startSegmentProcessing(): void {
     this.segmentTimer = setInterval(async () => {
+      if (this.isPaused) {
+        console.log('⏸️ [AUDIO] Segment processing paused');
+        return;
+      }
+      
       try {
         const currentTime = Date.now();
         const segmentStart = currentTime - this.segmentDuration;
@@ -1045,6 +1052,63 @@ class AudioBufferRecorder {
         console.error('❌ [AUDIO] Error processing segment:', error);
       }
     }, this.segmentDuration);
+  }
+
+  pauseProcessing(): void {
+    this.isPaused = true;
+    console.log('⏸️ [AUDIO] Audio processing paused');
+  }
+
+  resumeProcessing(): void {
+    this.isPaused = false;
+    console.log('▶️ [AUDIO] Audio processing resumed');
+  }
+
+  async getRecordedAudio(): Promise<Blob | null> {
+    if (this.chunks.length === 0) {
+      console.warn('⚠️ [AUDIO] No audio chunks recorded');
+      return null;
+    }
+    
+    // Combine all recorded chunks
+    const allBlobs = this.chunks.map(chunk => chunk.blob);
+    const combinedBlob = new Blob(allBlobs, {
+      type: this.chunks[0].blob.type || "audio/webm",
+    });
+    
+    console.log('🎤 [AUDIO] Combined recorded audio:', combinedBlob.size, 'bytes');
+    return combinedBlob;
+  }
+
+  async playRecordedAudio(): Promise<void> {
+    const audioBlob = await this.getRecordedAudio();
+    if (!audioBlob) {
+      console.error('❌ [AUDIO] No recorded audio to play');
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    
+    console.log('🔊 [AUDIO] Playing recorded audio...');
+    
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      console.log('✅ [AUDIO] Playback finished');
+    };
+    
+    audio.onerror = (error) => {
+      URL.revokeObjectURL(audioUrl);
+      console.error('❌ [AUDIO] Playback failed:', error);
+    };
+    
+    try {
+      await audio.play();
+    } catch (error) {
+      URL.revokeObjectURL(audioUrl);
+      console.error('❌ [AUDIO] Failed to start playback:', error);
+      throw error;
+    }
   }
 
   async captureSegmentBase64(
@@ -1236,6 +1300,27 @@ function handleAudioRecordingMessage(
 
     case "CAPTURE_SEGMENT":
       handleAudioCapture(message.data, sendResponse);
+      break;
+
+    case "PAUSE":
+      audioRecorder.pauseProcessing();
+      sendResponse({ success: true, message: "Audio processing paused" });
+      break;
+
+    case "RESUME":
+      audioRecorder.resumeProcessing();
+      sendResponse({ success: true, message: "Audio processing resumed" });
+      break;
+
+    case "PLAYBACK":
+      (async () => {
+        try {
+          await audioRecorder.playRecordedAudio();
+          sendResponse({ success: true, message: "Audio playback started" });
+        } catch (error) {
+          sendResponse({ success: false, error: (error as Error).message });
+        }
+      })();
       break;
 
     default:

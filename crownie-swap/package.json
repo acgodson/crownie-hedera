@@ -4,7 +4,8 @@
   "description": "",
   "scripts": {
     "test": "forge build && node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
-    "lint": "eslint  \"tests/**/*.ts\""
+    "lint": "eslint  \"tests/**/*.ts\"",
+    "fund": "pnpm dlx tsx scripts/fund.ts"
   },
   "devDependencies": {
     "@eslint/compat": "1.1.0",
@@ -40,6 +41,7 @@
   },
   "dependencies": {
     "@1inch/byte-utils": "2.6.0",
+    "@hashgraph/sdk": "^2.70.0",
     "dotenv": "16.4.5",
     "ethers": "6.13.2",
     "prool": "0.0.24"
