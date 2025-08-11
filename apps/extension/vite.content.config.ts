@@ -1,24 +1,24 @@
-import { defineConfig } from "vite";
-import * as path from "path";
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
   build: {
-    outDir: "dist",
+    outDir: 'dist',
     emptyOutDir: false,
-    rollupOptions: {
-      input: {
-        content: path.resolve(__dirname, "src/content/content.ts"),
-      },
-      output: {
-        entryFileNames: "[name].js",
-        format: "iife",
-        manualChunks: undefined,
-      },
+    lib: {
+      entry: resolve(__dirname, 'src/content/content.ts'),
+      name: 'CrownieContent',
+      fileName: 'content',
+      formats: ['iife']
     },
-    target: "esnext",
-    minify: false,
-  },
-  define: {
-    global: "globalThis",
-  },
-});
+    rollupOptions: {
+      output: {
+        globals: {
+          // Add any global dependencies here if needed
+        }
+      }
+    },
+    target: 'esnext',
+    minify: 'esbuild'
+  }
+}); 

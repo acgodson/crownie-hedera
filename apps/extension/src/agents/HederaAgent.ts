@@ -45,7 +45,6 @@ export class HederaAgent {
         await StorageService.saveAgentConfig(this.state.config);
       }
 
-      // Initialize identity (required for agent to work)
       this.state.identity = await this.identityManager.initialize(
         this.state.config
       );
@@ -94,57 +93,26 @@ export class HederaAgent {
         throw new Error("Hedera client or toolkit not available");
       }
 
-      console.log("🔧 Starting agent initialization...");
-      console.log("🔧 Client available:", !!this.client);
-      console.log("🔧 Toolkit available:", !!this.toolkit);
-
-      console.log("🔧 Initializing agent without polyfills...");
-
       const openaiApiKey = await StorageService.getOpenAIApiKey();
-      console.log(
-        "🔑 HederaAgent: Retrieved API key from storage:",
-        openaiApiKey ? "✅ Found" : "❌ Not found"
-      );
       if (!openaiApiKey) {
         throw new Error(
           "OpenAI API key not found. Please set it in the onboarding process."
         );
       }
-      console.log(
-        "🔑 Using OpenAI API key:",
-        `${openaiApiKey.substring(0, 10)}...`
-      );
 
       if (typeof process !== "undefined" && process.env) {
         process.env.OPENAI_API_KEY = openaiApiKey;
       }
 
-      console.log("🔧 Creating ChatOpenAI instance...");
       const llm = new ChatOpenAI({
         modelName: "gpt-4o-mini",
         temperature: 0,
         apiKey: openaiApiKey,
       });
-      console.log("✅ ChatOpenAI instance created");
 
-      console.log("🔧 Getting Hedera tools...");
       const hederaTools = this.toolkit.getTools();
-      console.log("🔧 Hedera tools count:", hederaTools.length);
-      console.log(
-        "🔧 Hedera tool names:",
-        hederaTools.map((t) => t.name)
-      );
-
-      console.log("🔧 Creating meeting tools...");
       const meetingTools = createMeetingTools(this.client);
-      console.log("🔧 Meeting tools count:", meetingTools.length);
-      console.log(
-        "🔧 Meeting tool names:",
-        meetingTools.map((t) => t.name)
-      );
-
       const allTools = [...hederaTools, ...meetingTools];
-      console.log("🔧 Total tools count:", allTools.length);
 
       const prompt = ChatPromptTemplate.fromTemplate(`
 You are a Hedera-powered AI agent that manages meeting recordings and HCS operations.
@@ -176,13 +144,11 @@ Current task: {input}
 {agent_scratchpad}
       `);
 
-      console.log("🔧 Creating OpenAI tools agent...");
       const agent = await createOpenAIToolsAgent({
         llm,
         tools: allTools,
         prompt,
       });
-      console.log("✅ OpenAI tools agent created");
 
       const memory = new BufferMemory({
         inputKey: "input",
@@ -190,24 +156,14 @@ Current task: {input}
         returnMessages: true,
       });
 
-      console.log("🔧 Creating agent executor...");
       this.agentExecutor = new AgentExecutor({
         agent,
         tools: allTools,
         memory,
         returnIntermediateSteps: false,
       });
-      console.log("✅ Agent executor created");
-
-      console.log(
-        "✅ Hedera Agent initialized with LangChain and Hedera tools"
-      );
     } catch (error) {
-      console.error("❌ Failed to initialize agent:", error);
-      console.error(
-        "❌ Error stack:",
-        error instanceof Error ? error.stack : "No stack trace"
-      );
+      console.error("Failed to initialize agent:", error);
       this.agentExecutor = null;
     }
   }
@@ -218,44 +174,30 @@ Current task: {input}
     network: "testnet" | "mainnet" = "testnet"
   ): Promise<AgentState> {
     try {
-      console.log("🔧 HederaAgent: Starting account import...");
       this.state.status = "initializing";
+      this.state.config.network = network;
 
-      // Import the identity first
       this.state.identity = await this.identityManager.importWithAccountId(
         privateKeyString,
         accountId,
         network
       );
 
-      console.log("✅ HederaAgent: Identity imported successfully:", this.state.identity.accountId);
-
-      // Get client and toolkit
       this.client = this.identityManager.getClient();
       this.toolkit = this.identityManager.getToolkit();
 
-      console.log("🔧 HederaAgent: Client and toolkit obtained:", {
-        hasClient: !!this.client,
-        hasToolkit: !!this.toolkit
-      });
-
-      // Initialize the agent - this is required for the extension to work
       if (this.client && this.toolkit) {
         try {
           await this.initializeAgent();
-          console.log("✅ HederaAgent: Agent initialized successfully");
         } catch (agentError) {
-          console.error("❌ HederaAgent: Agent initialization failed:", agentError);
-          console.error("❌ Agent error stack:", agentError instanceof Error ? agentError.stack : "No stack trace");
+          console.error("Agent initialization failed:", agentError);
           throw new Error(`Agent initialization failed: ${agentError instanceof Error ? agentError.message : "Unknown error"}`);
         }
       } else {
         throw new Error("Failed to get client or toolkit from identity manager");
       }
 
-      // Check if the account is healthy
       const isHealthy = await this.identityManager.isHealthy();
-      console.log("🔧 HederaAgent: Account health check:", isHealthy);
 
       if (!isHealthy) {
         this.state.status = "error";
@@ -264,18 +206,17 @@ Current task: {input}
         return this.state;
       }
 
-      // Set status to active and save state
       this.state.status = "active";
       this.state.lastHeartbeat = Date.now();
 
       this.startHeartbeat();
       await StorageService.updateLastHeartbeat();
+      await StorageService.saveAgentConfig(this.state.config);
       await StorageService.saveAgentState(this.state);
 
-      console.log("✅ HederaAgent: Account import completed successfully");
       return this.state;
     } catch (error) {
-      console.error("❌ HederaAgent: Failed to import account:", error);
+      console.error("Failed to import account:", error);
       this.state.status = "error";
       this.state.errorMessage =
         error instanceof Error ? error.message : "Failed to import account";
@@ -284,61 +225,45 @@ Current task: {input}
     }
   }
 
-  // Method to reinitialize agent when API key becomes available
   async reinitializeAgent(): Promise<void> {
     try {
-      console.log("🔧 HederaAgent: Attempting to reinitialize agent...");
-      
       if (!this.client || !this.toolkit) {
-        console.log("❌ HederaAgent: Cannot reinitialize - client or toolkit not available");
         return;
       }
 
       await this.initializeAgent();
-      console.log("✅ HederaAgent: Agent reinitialized successfully");
       
-      // Update the state to reflect successful reinitialization
       this.state.lastHeartbeat = Date.now();
       await StorageService.saveAgentState(this.state);
     } catch (error) {
-      console.error("❌ HederaAgent: Failed to reinitialize agent:", error);
-      // Don't update state on failure - keep the current state
+      console.error("Failed to reinitialize agent:", error);
     }
   }
 
   async restoreFromStorage(): Promise<AgentState | null> {
     try {
-      console.log("🔧 HederaAgent: Attempting to restore from storage...");
-      
-      // First check if we're already properly initialized and active
       if (this.state.status === "active" && this.agentExecutor && this.client && this.toolkit) {
-        console.log("✅ HederaAgent: Already active and properly initialized, skipping restore");
         return this.state;
       }
       
       const savedState = await StorageService.getAgentState();
       
       if (!savedState) {
-        console.log("❌ HederaAgent: No saved state found");
         return null;
       }
 
       if (savedState.status !== "active") {
-        console.log("❌ HederaAgent: Saved state is not active:", savedState.status);
         return null;
       }
 
-      console.log("✅ HederaAgent: Found active saved state, restoring...");
       this.state = savedState;
 
-      // Try to restore identity - if this fails, we can't restore
       try {
         this.state.identity = await this.identityManager.initialize(
           this.state.config
         );
-        console.log("✅ HederaAgent: Identity restored successfully");
       } catch (identityError) {
-        console.error("❌ HederaAgent: Failed to restore identity:", identityError);
+        console.error("Failed to restore identity:", identityError);
         return null;
       }
 
@@ -346,220 +271,69 @@ Current task: {input}
       this.toolkit = this.identityManager.getToolkit();
 
       if (!this.client || !this.toolkit) {
-        console.log("❌ HederaAgent: Failed to restore client/toolkit");
         return null;
       }
 
-      console.log("✅ HederaAgent: Client and toolkit restored");
-
-      // Only initialize agent if we don't have an executor already
       if (!this.agentExecutor) {
         try {
           await this.initializeAgent();
-          console.log("✅ HederaAgent: Agent initialized during restore");
         } catch (agentError) {
-          console.error("❌ HederaAgent: Agent initialization failed during restore:", agentError);
-          console.error("❌ Agent error stack:", agentError instanceof Error ? agentError.stack : "No stack trace");
-          // Don't fail the restore for agent initialization issues - the identity is valid
-          console.log("⚠️ HederaAgent: Continuing with restore despite agent initialization failure");
+          console.error("Agent initialization failed during restore:", agentError);
         }
-      } else {
-        console.log("✅ HederaAgent: Agent executor already exists, skipping initialization");
       }
 
-      // Quick health check but don't fail restore on network issues
       try {
-        const isHealthy = await this.identityManager.isHealthy();
-        if (!isHealthy) {
-          console.log("⚠️ HederaAgent: Health check failed but continuing restore");
-        } else {
-          console.log("✅ HederaAgent: Health check passed");
-        }
+        await this.identityManager.isHealthy();
       } catch (healthError) {
-        console.log("⚠️ HederaAgent: Health check error but continuing restore:", healthError);
+        // Continue restore despite health check issues
       }
 
-      // Ensure heartbeat is running
       this.state.lastHeartbeat = Date.now();
       if (!this.heartbeatInterval) {
         this.startHeartbeat();
       }
       await StorageService.updateLastHeartbeat();
 
-      console.log("✅ HederaAgent: Agent restored from storage successfully");
       return this.state;
     } catch (error) {
-      console.error("❌ HederaAgent: Failed to restore agent from storage:", error);
+      console.error("Failed to restore agent from storage:", error);
       return null;
-    }
-  }
-
-  async initiateMeetingSession(meetingData: {
-    title: string;
-    url: string;
-    platform: string;
-    sessionId: string;
-  }): Promise<{ topicId: string; session: any }> {
-    if (!this.agentExecutor) {
-      throw new Error(
-        "Agent not initialized - cannot initiate meeting session"
-      );
-    }
-
-    // Proceed without crypto checks - let Hedera SDK handle it
-
-    const task = `Initiate a new meeting session with the following details:
-- Title: ${meetingData.title}
-- URL: ${meetingData.url} 
-- Platform: ${meetingData.platform}
-- Session ID: ${meetingData.sessionId}
-
-Please:
-1. Create an HCS topic for this meeting using create_topic_tool
-2. Publish a meeting_start message with these details using submit_topic_message_tool
-3. Set up the session for transcription processing
-
-Return the topic ID and session details as JSON.`;
-
-    try {
-      console.log("🤖 Agent initiating meeting session...");
-      const result = await this.agentExecutor.invoke({
-        input: task,
-        context: meetingData,
-      });
-
-      console.log("✅ Agent completed meeting session initiation");
-      console.log("🤖 Agent result:", result);
-
-      // Parse the result to extract topic ID
-      let topicId = "";
-      if (typeof result.output === "string" && result.output.includes("0.0.")) {
-        const topicMatch = result.output.match(/0\.0\.\d+/);
-        topicId = topicMatch ? topicMatch[0] : "";
-      }
-
-      if (!topicId) {
-        console.warn(
-          "⚠️ No topic ID found in agent result. This may indicate a crypto or Hedera SDK issue."
-        );
-        console.warn("⚠️ Agent output:", result.output);
-      }
-
-      return {
-        topicId,
-        session: {
-          sessionId: meetingData.sessionId,
-          topicId,
-          title: meetingData.title,
-          platform: meetingData.platform,
-          startTime: Date.now(),
-        },
-      };
-    } catch (error) {
-      console.error("❌ Agent failed to initiate meeting session:", error);
-
-      // Check if it's a crypto-related error
-      if (
-        error instanceof Error &&
-        (error.message.includes("crypto") ||
-          error.message.includes("subtle") ||
-          error.message.includes("CryptoKey") ||
-          error.message.includes("sign") ||
-          error.message.includes("CreateTopic"))
-      ) {
-        console.error(
-          "🔧 This appears to be a crypto-related error in Hedera SDK"
-        );
-        console.error("🔧 Crypto availability:", {
-          globalThis: !!globalThis.crypto,
-          subtle: !!(globalThis.crypto && globalThis.crypto.subtle),
-          methods: globalThis.crypto?.subtle
-            ? Object.keys(globalThis.crypto.subtle)
-            : [],
-        });
-      }
-
-      throw error;
     }
   }
 
   async processTranscriptionSegment(segmentData: {
     sessionId: string;
     topicId: string;
-    segment: any;
+    meetingId: string;
+    segment: {
+      text: string;
+      confidence: number;
+      sequence: number;
+      startTime: number;
+      endTime: number;
+    };
   }): Promise<void> {
-    if (!this.agentExecutor) {
-      throw new Error(
-        "Agent not initialized - cannot process transcription segment"
-      );
-    }
+    const transcriptionMessage = JSON.stringify({
+      type: 'transcription',
+      meetingId: segmentData.meetingId,
+      segment: {
+        text: segmentData.segment.text,
+        startTime: segmentData.segment.startTime,
+        endTime: segmentData.segment.endTime,
+        confidence: segmentData.segment.confidence
+      },
+      timestamp: Date.now()
+    });
 
-    const task = `Process a new transcription segment for the ongoing meeting:
-- Session ID: ${segmentData.sessionId}
-- Topic ID: ${segmentData.topicId}
-- Segment Text: "${segmentData.segment.text}"
-- Confidence: ${segmentData.segment.confidence}
-- Sequence: ${segmentData.segment.sequence}
-
-Please:
-1. Evaluate if this segment should be published to HCS
-2. Format the segment data appropriately
-3. Submit the transcription message to the HCS topic
-4. Handle any publishing errors gracefully`;
-
-    try {
-      console.log("🤖 Agent processing transcription segment...");
-      await this.agentExecutor.invoke({
-        input: task,
-        context: segmentData,
-      });
-
-      console.log("✅ Agent completed transcription segment processing");
-    } catch (error) {
-      console.error("❌ Agent failed to process transcription segment:", error);
-      throw error;
-    }
+    // Use content script proxy for message submission
+    // Agent toolkit disabled due to service worker crypto limitations
+    throw new Error(`Message submission moved to background proxy handler for topic ${segmentData.topicId}`);
   }
 
-  async finalizeMeetingSession(sessionData: {
-    sessionId: string;
-    topicId: string;
-    endTime: number;
-    totalSegments: number;
-    totalWords: number;
-  }): Promise<void> {
-    if (!this.agentExecutor) {
-      throw new Error(
-        "Agent not initialized - cannot finalize meeting session"
-      );
-    }
-
-    const task = `Finalize the meeting session that just ended:
-- Session ID: ${sessionData.sessionId}
-- Topic ID: ${sessionData.topicId}
-- End Time: ${new Date(sessionData.endTime).toISOString()}
-- Total Segments: ${sessionData.totalSegments}
-- Total Words: ${sessionData.totalWords}
-
-Please:
-1. Generate a comprehensive meeting summary using the transcription data
-2. Publish a meeting_end message with session statistics
-3. Publish the meeting summary to the HCS topic
-4. Clean up any temporary session data
-5. Archive the meeting session appropriately`;
-
-    try {
-      console.log("🤖 Agent finalizing meeting session...");
-      await this.agentExecutor.invoke({
-        input: task,
-        context: sessionData,
-      });
-
-      console.log("✅ Agent completed meeting session finalization");
-    } catch (error) {
-      console.error("❌ Agent failed to finalize meeting session:", error);
-      throw error;
-    }
+  async createMeetingTopic(meetingId: string, title: string): Promise<string> {
+    // Always use content script proxy for crypto operations
+    // Agent toolkit crypto operations are disabled due to service worker limitations
+    throw new Error('Agent toolkit crypto disabled - use content script proxy');
   }
 
   async saveMeetingSession(session: any): Promise<void> {
@@ -587,67 +361,9 @@ Please:
 
       return result;
     } catch (error) {
-      console.error("❌ Agent execution failed:", error);
+      console.error("Agent execution failed:", error);
       throw error;
     }
-  }
-
-  async startRecordingWithAgent(meetingId: string): Promise<any> {
-    return await this.executeAgentTask(
-      `Start recording session for meeting ${meetingId}. Create HCS topic and begin processing transcription segments.`,
-      { meetingId }
-    );
-  }
-
-  async processTranscriptionSegmentWithAgent(
-    meetingId: string,
-    segment: any
-  ): Promise<any> {
-    return await this.executeAgentTask(
-      `Process transcription segment for meeting ${meetingId}. Analyze content and decide whether to publish to HCS or batch for later.`,
-      { meetingId, segment }
-    );
-  }
-
-  async stopRecordingWithAgent(
-    meetingId: string,
-    transcriptSegments: any[]
-  ): Promise<any> {
-    return await this.executeAgentTask(
-      `Stop recording session for meeting ${meetingId}. Generate comprehensive meeting summary from all transcript segments and publish final results to HCS. Include key points, action items, and decisions.`,
-      { meetingId, transcriptSegments }
-    );
-  }
-
-  async generateMeetingSummaryWithAgent(
-    meetingId: string,
-    transcriptSegments: any[]
-  ): Promise<any> {
-    return await this.executeAgentTask(
-      `Generate a comprehensive meeting summary for meeting ${meetingId} from the provided transcript segments. Extract key points, action items, decisions made, and participant insights. Format as a structured summary.`,
-      { meetingId, transcriptSegments }
-    );
-  }
-
-  async getMeetingHistoryWithAgent(query: string): Promise<any> {
-    return await this.executeAgentTask(
-      `Query meeting history: ${query}. Fetch relevant HCS topics and provide natural language response.`,
-      { query }
-    );
-  }
-
-  async getMeetingTranscriptWithAgent(meetingId: string): Promise<any> {
-    return await this.executeAgentTask(
-      `Get full transcript for meeting ${meetingId}. Fetch all transcription messages from HCS topic.`,
-      { meetingId }
-    );
-  }
-
-  async getActionItemsWithAgent(meetingId: string): Promise<any> {
-    return await this.executeAgentTask(
-      `Extract action items from meeting ${meetingId}. Analyze HCS messages for tasks and decisions.`,
-      { meetingId }
-    );
   }
 
   async startMeetingSession(
@@ -690,21 +406,6 @@ Please:
       throw new Error("Meeting session not found");
     }
 
-    if (!session.hcsTopicId) {
-      const result = await this.executeAgentTask(
-        `Create HCS topic for meeting ${session.meetingInfo.meetingId} with title "${session.meetingInfo.title}". Use create_topic_tool and then publish meeting start message.`,
-        {
-          meetingId: session.meetingInfo.meetingId,
-          title: session.meetingInfo.title,
-          platform: session.meetingInfo.platform,
-        }
-      );
-
-      if (result.success) {
-        session.hcsTopicId = result.topicId;
-      }
-    }
-
     session.isRecording = true;
     session.recordingStartTime = Date.now();
     session.status = "recording";
@@ -743,23 +444,7 @@ Please:
     sessionId: string,
     chunk: TranscriptionChunk
   ): Promise<void> {
-    const session = await StorageService.getMeetingSession(sessionId);
-    if (!session) {
-      throw new Error("Meeting session not found");
-    }
-
-    if (!session.transcriptionEnabled) {
-      throw new Error("Transcription not enabled for this session");
-    }
-
-    await this.executeAgentTask(
-      `Publish transcription segment to HCS topic for meeting ${session.meetingInfo.meetingId}. Use submit_topic_message_tool with the transcription data.`,
-      {
-        meetingId: session.meetingInfo.meetingId,
-        topicId: session.hcsTopicId,
-        segment: chunk,
-      }
-    );
+    throw new Error('Transcription publishing moved to background proxy - use content script proxy instead');
   }
 
   async endMeetingSession(
@@ -773,17 +458,6 @@ Please:
 
     session.status = "completed";
     session.endedAt = Date.now();
-
-    if (summary) {
-      await this.executeAgentTask(
-        `Publish meeting end summary to HCS topic for meeting ${session.meetingInfo.meetingId}. Use submit_topic_message_tool with the summary data.`,
-        {
-          meetingId: session.meetingInfo.meetingId,
-          topicId: session.hcsTopicId,
-          summary,
-        }
-      );
-    }
 
     await StorageService.saveMeetingSession(session);
   }
@@ -838,77 +512,46 @@ Please:
 
   async isAgentReady(): Promise<boolean> {
     try {
-      console.log("🔍 Checking agent readiness...");
-
-      // Check if agent is initialized and active
       if (this.state.status !== "active" || !this.agentExecutor) {
-        console.log(
-          "❌ Agent not ready - status:",
-          this.state.status,
-          "executor:",
-          !!this.agentExecutor
-        );
         return false;
       }
 
-      // Check if identity is properly initialized
       if (!this.state.identity || !this.state.identity.isInitialized) {
-        console.log("❌ Agent not ready - no identity or not initialized:", {
-          hasIdentity: !!this.state.identity,
-          isInitialized: this.state.identity?.isInitialized,
-        });
         return false;
       }
 
-      // Check if we have a valid client and toolkit
       if (!this.client || !this.toolkit) {
-        console.log("❌ Agent not ready - missing client or toolkit:", {
-          hasClient: !!this.client,
-          hasToolkit: !!this.toolkit,
-        });
         return false;
       }
 
-      // Check if toolkit has the required tools
       const tools = this.toolkit.getTools();
       if (tools.length === 0) {
-        console.log("❌ Agent not ready - toolkit has no tools available");
         return false;
       }
 
-      const requiredTools = ["create_topic_tool", "submit_topic_message_tool"];
+      const requiredTools = ["create_topic_tool", "submit_topic_message_tool", "get_topic_messages_query_tool"];
       const toolNames = tools.map((t: any) => t.name);
       const missingTools = requiredTools.filter(
         (name) => !toolNames.includes(name)
       );
 
       if (missingTools.length > 0) {
-        console.log(
-          "❌ Agent not ready - missing required tools:",
-          missingTools
-        );
-        console.log("Available tools:", toolNames);
         return false;
       }
 
-      // Check OpenAI API key
       const apiKey = await StorageService.getOpenAIApiKey();
       if (!apiKey) {
-        console.log("❌ Agent not ready - no OpenAI API key");
         return false;
       }
 
-      // Check if identity manager is healthy
       const isHealthy = await this.identityManager.isHealthy();
       if (!isHealthy) {
-        console.log("❌ Agent not ready - identity manager not healthy");
         return false;
       }
 
-      console.log("✅ Agent is fully ready!");
       return true;
     } catch (error) {
-      console.error("❌ Error checking agent readiness:", error);
+      console.error("Error checking agent readiness:", error);
       return false;
     }
   }

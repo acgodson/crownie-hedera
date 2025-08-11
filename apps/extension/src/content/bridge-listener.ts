@@ -28,7 +28,7 @@ class BridgeListener {
 
     window.addEventListener("message", (event) => {
       const trustedOrigins = [
-        "https://crownie-swap.vercel.app",
+        "https://crownie-demo.vercel.app",
         "http://localhost:3000",
       ];
 

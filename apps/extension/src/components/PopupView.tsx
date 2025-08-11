@@ -17,6 +17,7 @@ import { useMeetingStore } from '../stores/meetingStore'
 import logo from '../assets/logo.png'
 import OnboardingView from './OnboardingView'
 import FundingGuide from './FundingGuide'
+import HistoryView from './HistoryView'
 import googleMeetIcon from '../assets/google_meet.png'
 import zoomIcon from '../assets/zoom.png'
 import teamsIcon from '../assets/teams.png'
@@ -58,15 +59,15 @@ const PopupView: React.FC = () => {
   const [activeOrderIds, setActiveOrderIds] = useState<string[]>([])
   const [realMeetings, setRealMeetings] = useState<any[]>([])
   const [isPaused, setIsPaused] = useState(false)
+  const [showSummaryOverlay, setShowSummaryOverlay] = useState(false)
 
-  // All useEffect hooks must be at the top level
+
   useEffect(() => {
     checkAgentStatus()
     checkMeetingStatus()
     loadOrders()
 
     const interval = setInterval(() => {
-      checkAgentStatus()
       checkMeetingStatus()
       loadOrders()
     }, 5000)
@@ -74,10 +75,40 @@ const PopupView: React.FC = () => {
   }, [])
 
   useEffect(() => {
+    const handleMessage = (message: any) => {
+      if (message.type === "RECORDING_STATUS_UPDATE") {
+        setMeetingState(prev => ({
+          ...prev,
+          isRecording: message.data.isRecording,
+          duration: message.data.duration
+        }));
+      }
+    };
+
+    browser.runtime.onMessage.addListener(handleMessage);
+    return () => browser.runtime.onMessage.removeListener(handleMessage);
+  }, [])
+
+  useEffect(() => {
     loadMeetingHistory()
-    const interval = setInterval(loadMeetingHistory, 10000) // Update every 10s
+    const interval = setInterval(loadMeetingHistory, 10000)
     return () => clearInterval(interval)
   }, [])
+
+  // Real-time timer for recording duration
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    
+    if (meetingState.isRecording) {
+      interval = setInterval(() => {
+        checkMeetingStatus()
+      }, 1000)
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [meetingState.isRecording])
 
   const loadOrders = async () => {
     try {
@@ -97,16 +128,20 @@ const PopupView: React.FC = () => {
       const stateResponse = await browser.runtime.sendMessage({ action: 'GET_AGENT_STATE' }) as any
 
       if (healthResponse && stateResponse) {
+        // If the agent is already initialized and active, don't show initializing
+        const finalStatus = stateResponse.backgroundInitialized && stateResponse.status === 'active' 
+          ? 'active' 
+          : stateResponse.status || 'idle'
+        
         setAgentState({
-          status: stateResponse.status || 'idle',
+          status: finalStatus,
           accountId: stateResponse.identity?.accountId,
           balance: healthResponse.balance,
           isHealthy: healthResponse.status === 'healthy',
           errorMessage: stateResponse.errorMessage
         })
 
-        // Show onboarding only if agent is in error state AND we're not already showing onboarding
-        if ((stateResponse.status === 'error' || !stateResponse.identity) && agentState.status !== 'active') {
+        if ((stateResponse.status === 'error' || !stateResponse.identity) && finalStatus !== 'active') {
           setShowOnboarding(true)
         }
       }
@@ -137,6 +172,14 @@ const PopupView: React.FC = () => {
           duration: response.recordingDuration
         }))
 
+        // Set recording start time for real-time updates
+        if (response.isRecording) {
+          // The duration in the response is the total duration, not the time since recording started.
+          // We need to calculate the time since recording started.
+          const currentDuration = response.recordingDuration;
+          setMeetingState(prev => ({ ...prev, duration: currentDuration }));
+        }
+
         if (response.isMeetingDetected && response.meetingId) {
           console.log('🔍 Popup: Meeting detected, setting meeting code:', response.meetingId)
           setMeetingCode(response.meetingId)
@@ -158,33 +201,33 @@ const PopupView: React.FC = () => {
   const handleStartRecording = async () => {
     try {
       let response = await browser.runtime.sendMessage({ action: 'START_RECORDING' }) as any
-      
+
       if (response && response.success) {
-        setMeetingState(prev => ({ ...prev, isRecording: true }))
+        setMeetingState(prev => ({ ...prev, isRecording: true, duration: 0 }))
         setAgentState(prev => ({ ...prev, errorMessage: undefined }))
         return
       }
-      
+
       const errorMsg = response?.error || 'Failed to start recording'
       console.error('Failed to start recording:', errorMsg)
-      
+
       if (errorMsg.includes('No identity found') || errorMsg.includes('Agent not initialized')) {
         console.log('🔄 Popup: Agent not initialized, attempting to re-initialize...')
-        
+
         try {
           const agentStateResponse = await browser.runtime.sendMessage({ action: 'GET_AGENT_STATE' }) as any
           console.log('🔄 Popup: Current agent state:', agentStateResponse)
-          
+
           if (agentStateResponse?.identity) {
             console.log('🔄 Popup: Identity found, attempting to re-initialize agent...')
             const reinitResponse = await browser.runtime.sendMessage({ action: 'REINITIALIZE_AGENT' }) as any
-            
+
             if (reinitResponse?.success) {
               console.log('🔄 Popup: Agent re-initialized, retrying start recording...')
               response = await browser.runtime.sendMessage({ action: 'START_RECORDING' }) as any
-              
+
               if (response && response.success) {
-                setMeetingState(prev => ({ ...prev, isRecording: true }))
+                setMeetingState(prev => ({ ...prev, isRecording: true, duration: 0 }))
                 setAgentState(prev => ({ ...prev, errorMessage: undefined }))
                 return
               }
@@ -193,7 +236,7 @@ const PopupView: React.FC = () => {
         } catch (retryError) {
           console.error('🔄 Popup: Retry failed:', retryError)
         }
-        
+
         setAgentState(prev => ({
           ...prev,
           errorMessage: 'Please complete the onboarding process first to set up your account.'
@@ -207,7 +250,7 @@ const PopupView: React.FC = () => {
     } catch (error) {
       console.error('Failed to start recording:', error)
       const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred'
-      
+
       if (errorMsg.includes('No identity found') || errorMsg.includes('Agent not initialized')) {
         setAgentState(prev => ({
           ...prev,
@@ -238,18 +281,11 @@ const PopupView: React.FC = () => {
 
   const handlePauseRecording = async () => {
     try {
-      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
-        if (tabs[0]?.id) {
-          const response = await browser.tabs.sendMessage(tabs[0].id, {
-            action: "AUDIO_RECORDING",
-            subAction: "PAUSE"
-          }) as any
-          if (response?.success) {
-            setIsPaused(true)
-            console.log('⏸️ Recording paused')
-          }
-        }
-      })
+      const response = await browser.runtime.sendMessage({ action: 'PAUSE_RECORDING' }) as any
+      if (response?.success) {
+        setIsPaused(true)
+        console.log('⏸️ Recording paused')
+      }
     } catch (error) {
       console.error('Failed to pause recording:', error)
     }
@@ -257,42 +293,16 @@ const PopupView: React.FC = () => {
 
   const handleResumeRecording = async () => {
     try {
-      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
-        if (tabs[0]?.id) {
-          const response = await browser.tabs.sendMessage(tabs[0].id, {
-            action: "AUDIO_RECORDING", 
-            subAction: "RESUME"
-          }) as any
-          if (response?.success) {
-            setIsPaused(false)
-            console.log('▶️ Recording resumed')
-          }
-        }
-      })
+      const response = await browser.runtime.sendMessage({ action: 'RESUME_RECORDING' }) as any
+      if (response?.success) {
+        setIsPaused(false)
+        console.log('▶️ Recording resumed')
+      }
     } catch (error) {
       console.error('Failed to resume recording:', error)
     }
   }
 
-  const handlePlayback = async () => {
-    try {
-      await browser.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
-        if (tabs[0]?.id) {
-          const response = await browser.tabs.sendMessage(tabs[0].id, {
-            action: "AUDIO_RECORDING",
-            subAction: "PLAYBACK"
-          }) as any
-          if (response?.success) {
-            console.log('🔊 Playing back recorded audio')
-          } else {
-            console.error('Playback failed:', response?.error)
-          }
-        }
-      })
-    } catch (error) {
-      console.error('Failed to play audio:', error)
-    }
-  }
 
 
   const formatDuration = (seconds: number): string => {
@@ -323,8 +333,13 @@ const PopupView: React.FC = () => {
   const handleOnboardingComplete = async () => {
     setShowOnboarding(false)
 
-    // Get the final agent state after successful initialization
     try {
+      // Mark onboarding as completed in storage
+      await browser.storage.local.set({ 'onboarding_completed': true })
+      
+      // Trigger agent initialization in background script
+      await browser.runtime.sendMessage({ action: 'REINITIALIZE_AGENT' })
+
       const stateResponse = await browser.runtime.sendMessage({ action: 'GET_AGENT_STATE' }) as any
       const healthResponse = await browser.runtime.sendMessage({ action: 'HEALTH_CHECK' }) as any
 
@@ -342,12 +357,10 @@ const PopupView: React.FC = () => {
     }
   }
 
-  // Show onboarding if needed
   if (showOnboarding && agentState.status === 'error') {
     return <OnboardingView onComplete={handleOnboardingComplete} />
   }
 
-  // Show funding guide if requested
   if (currentView === 'funding' && agentState.accountId) {
     return (
       <FundingGuide
@@ -360,7 +373,7 @@ const PopupView: React.FC = () => {
 
   const loadMeetingHistory = async () => {
     try {
-      // Get meeting sessions from storage
+
       const sessionsResponse = await browser.runtime.sendMessage({ action: 'GET_MEETING_SESSIONS' }) as { sessions?: any[] }
       if (sessionsResponse?.sessions) {
         const meetings = sessionsResponse.sessions.map((session: any) => ({
@@ -524,7 +537,7 @@ const PopupView: React.FC = () => {
                     <button
                       onClick={async () => {
                         try {
-                          // Get meeting secret for completing the order
+
                           const secretResponse = await browser.runtime.sendMessage({
                             action: 'GET_MEETING_SECRET',
                             data: { meetingId: order.meetingId }
@@ -582,7 +595,7 @@ const PopupView: React.FC = () => {
             <button onClick={() => setCurrentView('main')} className="p-1 hover:bg-white/10 rounded">
               <ArrowLeft className="w-4 h-4" />
             </button>
-            <span className="font-medium">Meeting History</span>
+            {/* <span className="font-medium">Meeting History</span> */}
           </div>
         </div>
 
@@ -599,59 +612,71 @@ const PopupView: React.FC = () => {
             </div>
           ) : (
             realMeetings.map((meeting) => (
-            <div key={meeting.id} style={{ background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(243, 186, 80, 0.1)' }} className="rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-medium">{meeting.title}</span>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${meeting.status === 'Ongoing'
-                    ? 'text-black'
-                    : 'text-white'
-                    }`}
-                    style={{
-                      background: meeting.status === 'Ongoing' ? '#F3BA50' : '#10b981'
-                    }}>
-                    {meeting.status}
-                  </span>
+              <div key={meeting.id} style={{ background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(243, 186, 80, 0.1)' }} className="rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white font-medium">{meeting.title}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${meeting.status === 'Ongoing'
+                      ? 'text-black'
+                      : 'text-white'
+                      }`}
+                      style={{
+                        background: meeting.status === 'Ongoing' ? '#F3BA50' : '#10b981'
+                      }}>
+                      {meeting.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-xs mb-3" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  {meeting.date} • {meeting.duration}
+                </div>
+
+                {meeting.hcsTopicId && (
+                  <div className="text-xs mb-2" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+                    HCS Topic: {meeting.hcsTopicId}
+                  </div>
+                )}
+
+                {(meeting.totalSegments > 0 || meeting.totalWords > 0) && (
+                  <div className="text-xs mb-3" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+                    {meeting.totalSegments} segments • {meeting.totalWords} words
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <button
+                    className="text-xs hover:underline"
+                    style={{ color: '#F3BA50' }}
+                    onClick={() => {
+                      window.open('https://hashscan.io/testnet/topic/0.0.6534435/messages', '_blank')
+                    }}
+                  >
+                    Live View on HashScan
+                  </button>
+                  <button
+                    className="text-xs hover:underline"
+                    style={{ color: '#F3BA50' }}
+                    onClick={() => {
+                      setShowSummaryOverlay(true)
+                    }}
+                  >
+                    View Summary
+                  </button>
                 </div>
               </div>
-
-              <div className="text-xs mb-3" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-                {meeting.date} • {meeting.duration}
-              </div>
-
-              {meeting.hcsTopicId && (
-                <div className="text-xs mb-2" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-                  HCS Topic: {meeting.hcsTopicId}
-                </div>
-              )}
-
-              {(meeting.totalSegments > 0 || meeting.totalWords > 0) && (
-                <div className="text-xs mb-3" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-                  {meeting.totalSegments} segments • {meeting.totalWords} words
-                </div>
-              )}
-
-              <div className="flex items-center gap-3">
-                <button 
-                  className="text-xs hover:underline" 
-                  style={{ color: '#F3BA50' }}
-                  onClick={() => {
-                    // Copy topic ID to clipboard
-                    if (meeting.hcsTopicId) {
-                      navigator.clipboard.writeText(meeting.hcsTopicId)
-                    }
-                  }}
-                >
-                  Copy Topic ID
-                </button>
-                <button className="text-xs hover:underline" style={{ color: '#F3BA50' }}>
-                  View Details
-                </button>
-              </div>
-            </div>
-          ))
+            ))
           )}
         </div>
+
+        {/* Summary Overlay */}
+        {showSummaryOverlay && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="w-full h-full bg-gray-900">
+              <HistoryView onBack={() => setShowSummaryOverlay(false)} />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -723,13 +748,17 @@ const PopupView: React.FC = () => {
               ) : (
                 <div className="space-y-3">
                   <div className="text-center">
-                    <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Recording in progress</div>
-                    <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Audio is being recorded and sent to Crownie</div>
+                    <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                      {isPaused ? 'Recording Paused' : 'Recording in progress'}
+                    </div>
+                    <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      {isPaused ? 'Audio recording is paused' : 'Audio is being recorded and sent to Crownie'}
+                    </div>
 
                     <div className="flex items-center justify-center gap-1 my-3">
-                      <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50' }}></div>
-                      <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50', animationDelay: '0.2s' }}></div>
-                      <div className="w-1 h-1 rounded-full animate-pulse" style={{ background: '#F3BA50', animationDelay: '0.4s' }}></div>
+                      <div className={`w-1 h-1 rounded-full ${isPaused ? '' : 'animate-pulse'}`} style={{ background: '#F3BA50' }}></div>
+                      <div className={`w-1 h-1 rounded-full ${isPaused ? '' : 'animate-pulse'}`} style={{ background: '#F3BA50', animationDelay: '0.2s' }}></div>
+                      <div className={`w-1 h-1 rounded-full ${isPaused ? '' : 'animate-pulse'}`} style={{ background: '#F3BA50', animationDelay: '0.4s' }}></div>
                     </div>
 
                     {meetingState.duration > 0 && (
@@ -739,10 +768,31 @@ const PopupView: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Recording Control Buttons */}
+                  <div className="flex gap-2">
+                    {!isPaused ? (
+                      <button
+                        onClick={handlePauseRecording}
+                        className="w-full bg-transparent border py-2 rounded-full font-medium flex items-center justify-center gap-2 text-sm"
+                        style={{ borderColor: '#F3BA50', color: '#F3BA50' }}
+                      >
+                        ⏸️ Pause Processing
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleResumeRecording}
+                        className="w-full bg-transparent border py-2 rounded-full font-medium flex items-center justify-center gap-2 text-sm"
+                        style={{ borderColor: '#10b981', color: '#10b981' }}
+                      >
+                        ▶️ Resume Processing
+                      </button>
+                    )}
+                  </div>
+
                   <button
                     onClick={handleStopRecording}
                     className="w-full bg-transparent border py-3 rounded-full font-medium flex items-center justify-center gap-2"
-                    style={{ borderColor: '#F3BA50', color: '#F3BA50' }}
+                    style={{ borderColor: '#ef4444', color: '#ef4444' }}
                   >
                     <MicOff className="w-4 h-4" />
                     Stop Recording
@@ -761,12 +811,13 @@ const PopupView: React.FC = () => {
               {/* Recording Status Debug Info */}
               {meetingState.isRecording && (
                 <div className="rounded-lg p-3 border" style={{ background: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(243, 186, 80, 0.1)' }}>
-                  <div className="text-xs mb-1" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Debug Info</div>
+                  <div className="text-xs mb-1" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Recording Status</div>
                   <div className="text-xs space-y-1" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-                    <div>✅ Recording Active</div>
-                    <div>📡 Check browser console for audio logs</div>
-                    <div>🎤 Should see "Audio chunk captured" logs</div>
-                    <div>📤 Should see "Sending segment" every 5s</div>
+                    <div>✅ Recording Active: {formatDuration(meetingState.duration)}</div>
+                    <div>📡 Audio: Capturing chunks every 5s</div>
+                    <div>📤 HCS: Topic 0.0.6534435</div>
+                    <div>🎯 Transcription: Active</div>
+                    <div>📋 Check browser console for detailed logs</div>
                   </div>
                 </div>
               )}
@@ -834,6 +885,7 @@ const PopupView: React.FC = () => {
           <span className="text-xs">History</span>
         </button>
       </div>
+
     </div>
   )
 }

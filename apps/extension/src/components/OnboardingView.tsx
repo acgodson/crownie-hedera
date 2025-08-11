@@ -9,10 +9,10 @@ interface OnboardingViewProps {
 const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0)
   const [isInitializing, setIsInitializing] = useState(false)
-  const [privateKey, setPrivateKey] = useState('302e020100300506032b657004220420320cd6158cc0b2dd41d3013e92b108b679ed23853330fb4ba0ad1dcb162b1718')
-  const [accountId, setAccountId] = useState('0.0.4691111')
+  const [privateKey, setPrivateKey] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet')
-  const [openaiApiKey, setOpenaiApiKey] = useState('sk-YSlaebRWGZY_7TB4YpJaf81KKZKa94wpER-HyaRO0lT3BlbkFJlkCTXUfBUj6Kdu-9vNkk2gh2AvhtQRp1EPBAZIkmQA')
+  const [openaiApiKey, setOpenaiApiKey] = useState('')
   const [initStatus, setInitStatus] = useState<{
     success: boolean
     message: string
@@ -144,7 +144,7 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) => {
 
     try {
       console.log("🔧 OnboardingView: Starting account import...");
-      
+
       // Save OpenAI API key first
       await browser.storage.local.set({
         openaiApiKey: openaiApiKey.trim()

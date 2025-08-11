@@ -1,6 +1,6 @@
 import { Client, PrivateKey, AccountId, AccountBalanceQuery } from "@hashgraph/sdk";
-import { HederaLangchainToolkit, coreConsensusPlugin } from "hedera-agent-kit";
-import type { AgentIdentity, AgentConfig, HederaNetwork } from "../types";
+import { HederaLangchainToolkit, coreConsensusPlugin, coreQueriesPlugin } from "hedera-agent-kit";
+import type { AgentIdentity, AgentConfig } from "../types";
 import { StorageService } from "../services/StorageService";
 
 export class IdentityManager {
@@ -8,42 +8,18 @@ export class IdentityManager {
   private toolkit: any | null = null;
   private identity: AgentIdentity | null = null;
 
-  private readonly NETWORKS: Record<string, HederaNetwork> = {
-    testnet: {
-      name: "testnet",
-      nodeAccountId: "0.0.3",
-      nodeEndpoint: "testnet.mirrornode.hedera.com:443",
-      mirrorNodeUrl: "https://testnet.mirrornode.hedera.com",
-    },
-    mainnet: {
-      name: "mainnet",
-      nodeAccountId: "0.0.3",
-      nodeEndpoint: "mainnet.mirrornode.hedera.com:443",
-      mirrorNodeUrl: "https://mainnet.mirrornode.hedera.com",
-    },
-  };
 
   async initialize(config?: AgentConfig): Promise<AgentIdentity> {
     try {
-      console.log("🔧 IdentityManager: Starting initialization...");
-
       let identity = await StorageService.getAgentIdentity();
-      console.log("🔧 IdentityManager: Retrieved identity from storage:", {
-        hasIdentity: !!identity,
-        isInitialized: identity?.isInitialized,
-        accountId: identity?.accountId
-      });
 
       if (identity && identity.isInitialized) {
         this.identity = identity;
         
         try {
           await this.initializeClient(identity, config?.network || "testnet");
-          console.log("✅ IdentityManager: Client initialized successfully");
         } catch (clientError) {
-          console.error("❌ IdentityManager: Client initialization failed:", clientError);
-          // Don't fail the entire initialization if client setup fails
-          // The identity is still valid, just the client needs to be retried
+          console.error("Client initialization failed:", clientError);
         }
         
         await this.updateLastActive();
@@ -52,7 +28,7 @@ export class IdentityManager {
 
       throw new Error("No identity found. Please import a private key and set up your account in the extension popup first.");
     } catch (error) {
-      console.error("❌ IdentityManager: Failed to initialize:", error);
+      console.error("Failed to initialize:", error);
       throw error;
     }
   }
@@ -117,7 +93,6 @@ export class IdentityManager {
 
       return identity;
     } catch (error) {
-      console.error("Failed to import account with ID:", error);
       throw error;
     }
   }
@@ -139,7 +114,7 @@ export class IdentityManager {
       this.toolkit = new HederaLangchainToolkit({
         client: this.client,
         configuration: {
-          plugins: [coreConsensusPlugin],
+          plugins: [coreConsensusPlugin, coreQueriesPlugin],
           context: {
             accountId: identity.accountId,
           },

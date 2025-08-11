@@ -98,11 +98,38 @@ jobs:
           body: |
             ## Crownie Chrome Extension v${{ needs.check-version.outputs.new-version }}
 
-            Features:
-            - AI-powered note generation
-            - Swap intent generation
-            - Escrow Relays
+            ## 🚀 How to Use
 
+            ### Installation
+            1. Download and unzip the extension file to your computer
+            2. Open Chrome and go to `chrome://extensions/`
+            3. Enable "Developer mode" (toggle in top right)
+            4. Click "Load unpacked" and select the unzipped extension folder
+
+            ### Setup
+            - **Hedera Account ID and Private Key** (required)
+            - **OpenAI API Key** (required)
+
+            ### Usage
+            1. Join a live meeting (Google Meet, Zoom, Teams, etc.)
+            2. Click the Crownie extension icon to start recording
+            3. The AI agent will automatically:
+               - Detect meeting start/end
+               - Transcribe audio in real-time
+               - Publish transcripts to Hedera Consensus Service (HCS)
+               - Generate AI-powered meeting summaries
+
+            ### Features
+            - 🎤 **Real-time Audio Recording** - Captures meeting audio automatically
+            - 🤖 **AI Transcription** - OpenAI Whisper-powered speech-to-text
+            - ⛓️ **Hedera Integration** - Immutable meeting records on HCS
+            - 📝 **Smart Summaries** - AI-generated meeting insights and action items
+            - 🔄 **Autonomous Operation** - Works independently without manual intervention
+
+            ### Homepage
+            Visit [crownie-demo.vercel.app](https://crownie-demo.vercel.app) for more information
+
+            ---
             Built from commit: ${{ github.sha }}
 
           draft: false

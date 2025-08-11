@@ -65,11 +65,9 @@ export const createMeetingTools = (client: Client) => [
     }),
     func: async (params: TranscriptionParams) => {
       try {
-        const topic = await StorageService.getHCSTopic(params.meetingId);
-        if (!topic) {
-          return `No HCS topic found for meeting ${params.meetingId}`;
-        }
-
+        // Use static demo topic ID instead of creating new topics
+        const staticTopicId = "0.0.6534435";
+        
         const segment = {
           text: params.segmentText,
           startTime: params.startTime,
@@ -84,10 +82,19 @@ export const createMeetingTools = (client: Client) => [
           timestamp: Date.now()
         });
 
+        console.log(`📝 Prepared transcription message for topic ${staticTopicId}:`, {
+          meetingId: params.meetingId,
+          textLength: params.segmentText.length,
+          confidence: params.confidence,
+          message: message
+        });
+
+        // Return instruction for the agent to use submit_topic_message_tool
         return JSON.stringify({
           success: true,
+          action: 'submit_message',
+          topicId: staticTopicId,
           message: message,
-          topicId: topic.topicId,
           segment: segment
         });
       } catch (error) {
@@ -256,6 +263,7 @@ export const createMeetingTools = (client: Client) => [
       try {
         const sessions = await StorageService.getAllMeetingSessions();
         const results = [];
+        const limit = params.limit || 50;
 
         for (const session of sessions) {
           if (session.hcsTopicId) {
@@ -272,7 +280,7 @@ export const createMeetingTools = (client: Client) => [
 
         return JSON.stringify({
           success: true,
-          meetings: results,
+          meetings: results.slice(0, limit),
           totalMeetings: results.length
         });
       } catch (error) {

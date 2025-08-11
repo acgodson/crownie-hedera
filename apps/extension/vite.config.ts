@@ -35,6 +35,8 @@ export default defineConfig(({ mode }) => {
                 const manifest = JSON.parse(contents.toString());
                 manifest.background.service_worker = "background.js";
                 manifest.content_scripts[0].js = ["content.js"];
+                // Remove module type for content scripts - Chrome extensions don't support ES6 modules
+                delete manifest.content_scripts[0].type;
                 manifest.action.default_popup = "index.html";
                 return JSON.stringify(manifest, null, 2);
               },
@@ -43,6 +45,8 @@ export default defineConfig(({ mode }) => {
               src: path.resolve(__dirname, "src/assets/*"),
               dest: path.resolve(__dirname, "dist/assets"),
             },
+
+
           ],
           hook: "writeBundle",
         }),
@@ -58,23 +62,22 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
-      rollupOptions: {
-        input: {
-          popup: path.resolve(__dirname, "index.html"),
-          background: path.resolve(__dirname, "src/background/background.ts"),
-          content: path.resolve(__dirname, "src/content/content.ts"),
-        },
-        output: {
-          entryFileNames: (chunk: { name: string }) => {
-            if (chunk.name === "background") return "background.js";
-            if (chunk.name === "content") return "content.js";
-            return "popup.js";
+              rollupOptions: {
+          input: {
+            popup: path.resolve(__dirname, "index.html"),
+            background: path.resolve(__dirname, "src/background/background.ts"),
+            // Content script built separately as IIFE
           },
-          chunkFileNames: "chunks/[name].[hash].js",
-          assetFileNames: "assets/[name].[ext]",
-          format: "es",
+          output: {
+            entryFileNames: (chunk: { name: string }) => {
+              if (chunk.name === "background") return "background.js";
+              return "popup.js";
+            },
+            chunkFileNames: "chunks/[name].[hash].js",
+            assetFileNames: "assets/[name].[ext]",
+            format: "es",
+          },
         },
-      },
       target: "esnext",
       minify: "esbuild",
       copyPublicDir: false,

@@ -1,13 +1,13 @@
 {
   "name": "crownie-extension",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "Chrome extension for capturing and transcribing meetings into swap intents",
   "type": "module",
   "scripts": {
     "dev": "vite --mode development",
     "dev:bridge": "vite --mode development --port 3000",
     "build": "vite build --mode production",
-    "build:extension": "vite build --mode extension && vite build --config vite.content.config.ts",
+    "build:extension": "vite build --mode extension && vite build --config vite.content.config.ts && cp dist/content.iife.js dist/content.js",
     "preview": "vite preview",
     "package": "npm run build:extension && node scripts/package-extension.js",
     "release": "npm run package && node scripts/create-release.js",
