@@ -30,29 +30,29 @@ const HeroSection = () => {
 
             <motion.div 
                 className="flex flex-col items-center justify-center text-center py-20 relative z-10"
-                variants={staggerContainerVariants}
+                variants={staggerContainerVariants as any}
                 initial="hidden"
                 animate="visible"
             >
                 <motion.h1 
                     className="text-4xl md:text-6xl font-bold text-white mb-6 max-w-4xl"
-                    variants={heroTextVariants}
+                    variants={heroTextVariants as any}
                 >
                     <motion.span 
                         className="text-crownie-primary"
-                        variants={textRevealVariants}
+                        variants={textRevealVariants as any}
                     >
                         Speak.
                     </motion.span>{' '}
                     <motion.span 
                         className="text-crownie-secondary"
-                        variants={textRevealVariants}
+                        variants={textRevealVariants as any}
                     >
                         Track.
                     </motion.span>{' '}
                     <motion.span 
                         className="text-white"
-                        variants={textRevealVariants}
+                        variants={textRevealVariants as any}
                     >
                         Execute.
                     </motion.span>
@@ -60,7 +60,7 @@ const HeroSection = () => {
 
                 <motion.p 
                     className="text-gray-300 text-lg md:text-xl mb-8 max-w-2xl"
-                    variants={textRevealVariants}
+                    variants={textRevealVariants as any}
                 >
                     Turn live team calls into instant, executable actions — so your DAO
                     never waits on "follow-ups" again.
@@ -68,14 +68,14 @@ const HeroSection = () => {
 
                 <motion.div 
                     className="w-full backdrop-blur-md bg-black bg-opacity-5 border-t border-b border-white border-opacity-20 py-8"
-                    variants={buttonVariants}
+                    variants={buttonVariants as any}
                 >
                     <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                         <motion.a 
                             href="https://github.com/acgodson/crownie-hedera/releases/download/v0.0.17/crownie-extension-v0.0.17.zip"
                             download="crownie-extension-v0.0.17.zip"
                             className="px-8 py-3 bg-crownie-primary text-black font-semibold rounded-lg transition-colors inline-block"
-                            variants={buttonVariants}
+                            variants={buttonVariants as any}
                             whileHover="hover"
                             whileTap="tap"
                         >
@@ -86,7 +86,7 @@ const HeroSection = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-8 py-3 border border-crownie-primary text-white rounded-lg hover:bg-crownie-primary hover:bg-opacity-10 transition-colors flex items-center gap-2"
-                            variants={buttonVariants}
+                            variants={buttonVariants as any}
                             whileHover="hover"
                             whileTap="tap"
                         >

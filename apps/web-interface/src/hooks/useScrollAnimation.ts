@@ -8,14 +8,13 @@ export interface UseScrollAnimationOptions {
 }
 
 export const useScrollAnimation = (options: UseScrollAnimationOptions = {}) => {
-  const { threshold = 0.1, triggerOnce = true, margin = "0px 0px -100px 0px" } = options
+  const { triggerOnce = true, margin = "0px 0px -100px 0px" } = options
   const ref = useRef(null)
   
   const isInView = useInView(ref, {
-    threshold,
     once: triggerOnce,
-    margin,
-  })
+    margin: margin as any,
+  } as any)
 
   return { ref, isInView }
 }
