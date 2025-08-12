@@ -6,6 +6,7 @@ import SolutionSection from "./components/organisms/solutionSection"
 import SwapWidget from "./components/SwapWidget"
 import CompleteSwapWidget from "./components/CompleteSwapWidget"
 import FillOrderWidget from "./components/FillOrderWidget"
+import PageLoader from "./components/PageLoader"
 import { WagmiProvider } from "./providers/WagmiProvider"
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
   const [showSwapWidget, setShowSwapWidget] = useState(false)
   const [showCompleteSwapWidget, setShowCompleteSwapWidget] = useState(false)
   const [showFillOrderWidget, setShowFillOrderWidget] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const secretHash = searchParams.get('secretHash')
@@ -69,6 +71,10 @@ function App() {
         </div>
       </WagmiProvider>
     )
+  }
+
+  if (isLoading) {
+    return <PageLoader onLoadComplete={() => setIsLoading(false)} />
   }
 
   return (
